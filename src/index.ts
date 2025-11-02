@@ -1,4 +1,8 @@
 import { env } from './config/env';
+import { loadSlashCommands } from './discord/commands/_loader';
+import { loadMessageContextCommands } from './discord/contexts/_loader';
+import { createClient } from './discord/client';
+import { registerInteractionCreateListener } from './discord/listeners/interactionCreate';
 import { logger } from './utils/logger';
 
 const BANNER = `
@@ -14,11 +18,20 @@ const main = async () => {
   console.log(BANNER);
   logger.info('Starting Shapeshifter...');
 
-  // This is a placeholder for the real bot initialization.
-  // The token is loaded to ensure it's present, but not used yet.
-  logger.info(`Loaded token for client ID: ${env.CLIENT_ID}`);
-  logger.info('Application bootstrapped successfully.');
-  logger.info('Next step: Implement Discord client initialization.');
+  const [slashCommands, contextCommands] = await Promise.all([
+    loadSlashCommands(),
+    loadMessageContextCommands(),
+  ]);
+
+  logger.info(`Loaded ${slashCommands.size} slash command(s) and ${contextCommands.size} context action(s).`);
+
+  const client = createClient();
+
+  registerInteractionCreateListener(client, slashCommands, contextCommands);
+
+  await client.login(env.DISCORD_TOKEN);
+
+  logger.info(`Discord client authenticated for application ${env.CLIENT_ID}.`);
 };
 
 main().catch((err) => {
