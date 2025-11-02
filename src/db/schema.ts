@@ -1,0 +1,37 @@
+import { sql } from 'drizzle-orm';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
+const id = integer('id').primaryKey({ autoIncrement: true });
+const createdAt = integer('created_at', { mode: 'timestamp' }).default(
+  sql`(strftime('%s', 'now'))`,
+);
+
+export const systems = sqliteTable('systems', {
+  id,
+  ownerUserId: text('owner_user_id').notNull(),
+  displayName: text('display_name'),
+  createdAt,
+});
+
+export const members = sqliteTable('members', {
+  id,
+  systemId: integer('system_id')
+    .notNull()
+    .references(() => systems.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  avatarUrl: text('avatar_url'),
+  createdAt,
+});
+
+export const proxiedMessages = sqliteTable('proxied_messages', {
+  id,
+  originalMessageId: text('original_message_id').notNull(),
+  webhookMessageId: text('webhook_message_id').notNull(),
+  webhookId: text('webhook_id').notNull(),
+  channelId: text('channel_id').notNull(),
+  actorUserId: text('actor_user_id').notNull(),
+  memberId: integer('member_id')
+    .notNull()
+    .references(() => members.id, { onDelete: 'cascade' }),
+  createdAt,
+});
