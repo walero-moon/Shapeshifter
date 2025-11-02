@@ -1,4 +1,8 @@
+import { Events } from 'discord.js';
+
 import { env } from './config/env';
+import { client } from './discord/client';
+import { registerInteractionListener } from './discord/listeners/interactionCreate';
 import { logger } from './utils/logger';
 
 const BANNER = `
@@ -14,11 +18,15 @@ const main = async () => {
   console.log(BANNER);
   logger.info('Starting Shapeshifter...');
 
-  // This is a placeholder for the real bot initialization.
-  // The token is loaded to ensure it's present, but not used yet.
-  logger.info(`Loaded token for client ID: ${env.CLIENT_ID}`);
-  logger.info('Application bootstrapped successfully.');
-  logger.info('Next step: Implement Discord client initialization.');
+  await registerInteractionListener(client);
+
+  client.once(Events.ClientReady, (readyClient) => {
+    logger.info(`Logged in as ${readyClient.user.tag} (${readyClient.user.id}).`);
+  });
+
+  await client.login(env.DISCORD_TOKEN);
+
+  logger.info(`Login initiated for client ID ${env.CLIENT_ID}.`);
 };
 
 main().catch((err) => {
