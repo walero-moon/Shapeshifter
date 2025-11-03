@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "register:commands": "tsx scripts/register-commands.ts",
     "drizzle:generate": "drizzle-kit generate",
-    "drizzle:migrate": "tsx src/db/migrate.ts"
+    "drizzle:migrate": "tsx src/db/migrate.ts",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "repository": {
     "type": "git",
@@ -47,6 +49,7 @@
     "eslint": "^9.39.0",
     "eslint-plugin-import": "^2.32.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.6"
   }
 }
