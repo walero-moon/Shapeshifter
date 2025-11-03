@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { StringSelectMenuInteraction, ModalSubmitInteraction, GuildTextBasedChannel, GuildMember } from 'discord.js';
+import { StringSelectMenuInteraction, ModalSubmitInteraction, GuildTextBasedChannel, GuildMember, MessageFlags } from 'discord.js';
 import { registerInteractionListener } from '../../src/discord/listeners/interactionCreate';
 import { MemberService } from '../../src/discord/services/MemberService';
 import { ProxyService } from '../../src/discord/services/ProxyService';
@@ -228,7 +228,7 @@ describe('interactionCreate - Proxy As functionality', () => {
 
             expect(mockInteraction.reply).toHaveBeenCalledWith({
                 content: 'Invalid channel.',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         });
 
@@ -241,7 +241,7 @@ describe('interactionCreate - Proxy As functionality', () => {
 
             expect(mockInteraction.reply).toHaveBeenCalledWith({
                 content: 'Message not found.',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         });
 
@@ -276,7 +276,7 @@ describe('interactionCreate - Proxy As functionality', () => {
             expect(mockTargetMessage.delete).toHaveBeenCalled();
             expect(mockInteraction.reply).toHaveBeenCalledWith({
                 content: 'Member created and message proxied successfully.',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         });
 
@@ -290,7 +290,7 @@ describe('interactionCreate - Proxy As functionality', () => {
 
             expect(mockInteraction.reply).toHaveBeenCalledWith({
                 content: 'Error: Member creation failed',
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         });
     });

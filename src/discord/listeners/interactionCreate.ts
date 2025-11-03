@@ -1,4 +1,4 @@
-import { Client, Events, Interaction } from 'discord.js';
+import { Client, Events, Interaction, MessageFlags } from 'discord.js';
 
 import { logger } from '../../utils/logger';
 import { loadSlashCommands } from '../commands/_loader';
@@ -7,6 +7,7 @@ import { memberAutocomplete } from '../commands/_autocomplete/memberAutocomplete
 import { MemberService } from '../services/MemberService';
 import { ProxyService } from '../services/ProxyService';
 import { permissionGuard } from '../middleware/permissionGuard';
+import { handleInteractionError } from '../utils/errorHandler';
 
 const memberService = new MemberService();
 const proxyService = new ProxyService();
@@ -27,7 +28,11 @@ export const registerInteractionListener = async (client: Client) => {
           return;
         }
 
-        await command.execute(interaction);
+        try {
+          await command.execute(interaction);
+        } catch (error) {
+          await handleInteractionError({ interaction, error });
+        }
       } else if (interaction.isMessageContextMenuCommand()) {
         const context = messageContexts.get(interaction.commandName);
 
@@ -36,42 +41,50 @@ export const registerInteractionListener = async (client: Client) => {
           return;
         }
 
-        await context.execute(interaction);
+        try {
+          await context.execute(interaction);
+        } catch (error) {
+          await handleInteractionError({ interaction, error });
+        }
       } else if (interaction.isAutocomplete()) {
         if (interaction.commandName === 'proxy' && interaction.options.getSubcommand() === 'send' && interaction.options.getFocused(true).name === 'member') {
-          await memberAutocomplete(interaction);
+          try {
+            await memberAutocomplete(interaction);
+          } catch (error) {
+            await handleInteractionError({ interaction, error, silent: true });
+          }
         }
       } else if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('proxy_as_select_member:')) {
-          const [, messageId] = interaction.customId.split(':');
-          const memberId = parseInt(interaction.values[0], 10);
-
-          const channel = interaction.channel;
-          if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-            await interaction.update({ content: 'Invalid channel.', components: [] });
-            return;
-          }
-
-          const targetMessage = await channel.messages.fetch(messageId);
-          if (!targetMessage) {
-            await interaction.update({ content: 'Message not found.', components: [] });
-            return;
-          }
-
-          const guildMember = await interaction.guild!.members.fetch(interaction.user.id);
-          const attachments = targetMessage.attachments.map(a => a);
-          const shaped = permissionGuard({
-            member: guildMember,
-            channel,
-            source: { content: targetMessage.content, attachments },
-          });
-
-          if (!shaped) {
-            await interaction.editReply({ content: 'Insufficient permissions.', components: [] });
-            return;
-          }
-
           try {
+            const [, messageId] = interaction.customId.split(':');
+            const memberId = parseInt(interaction.values[0], 10);
+
+            const channel = interaction.channel;
+            if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+              await interaction.update({ content: 'Invalid channel.', components: [] });
+              return;
+            }
+
+            const targetMessage = await channel.messages.fetch(messageId);
+            if (!targetMessage) {
+              await interaction.update({ content: 'Message not found.', components: [] });
+              return;
+            }
+
+            const guildMember = await interaction.guild!.members.fetch(interaction.user.id);
+            const attachments = targetMessage.attachments.map(a => a);
+            const shaped = permissionGuard({
+              member: guildMember,
+              channel,
+              source: { content: targetMessage.content, attachments },
+            });
+
+            if (!shaped) {
+              await interaction.editReply({ content: 'Insufficient permissions.', components: [] });
+              return;
+            }
+
             await proxyService.sendProxied({
               actorUserId: interaction.user.id,
               memberId,
@@ -83,28 +96,28 @@ export const registerInteractionListener = async (client: Client) => {
 
             await targetMessage.delete();
             await interaction.editReply({ content: 'Message proxied successfully.', components: [] });
-          } catch (error: any) {
-            await interaction.editReply({ content: `Error: ${error.message}`, components: [] });
+          } catch (error) {
+            await handleInteractionError({ interaction, error, customMessage: `Error: ${error.message}` });
           }
         }
       } else if (interaction.isModalSubmit()) {
         if (interaction.customId.startsWith('proxy_as_create_member:')) {
-          const [, messageId] = interaction.customId.split(':');
-          const memberName = interaction.fields.getTextInputValue('member_name');
-
-          const channel = interaction.channel;
-          if (!channel || !channel.isTextBased() || channel.isDMBased()) {
-            await interaction.reply({ content: 'Invalid channel.', ephemeral: true });
-            return;
-          }
-
-          const targetMessage = await channel.messages.fetch(messageId);
-          if (!targetMessage) {
-            await interaction.reply({ content: 'Message not found.', ephemeral: true });
-            return;
-          }
-
           try {
+            const [, messageId] = interaction.customId.split(':');
+            const memberName = interaction.fields.getTextInputValue('member_name');
+
+            const channel = interaction.channel;
+            if (!channel || !channel.isTextBased() || channel.isDMBased()) {
+              await interaction.reply({ content: 'Invalid channel.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+
+            const targetMessage = await channel.messages.fetch(messageId);
+            if (!targetMessage) {
+              await interaction.reply({ content: 'Message not found.', flags: MessageFlags.Ephemeral });
+              return;
+            }
+
             const member = await memberService.addMember(interaction.user.id, memberName);
 
             const guildMember = await interaction.guild!.members.fetch(interaction.user.id);
@@ -116,7 +129,7 @@ export const registerInteractionListener = async (client: Client) => {
             });
 
             if (!shaped) {
-              await interaction.reply({ content: 'Insufficient permissions.', ephemeral: true });
+              await interaction.reply({ content: 'Insufficient permissions.', flags: MessageFlags.Ephemeral });
               return;
             }
 
@@ -130,21 +143,14 @@ export const registerInteractionListener = async (client: Client) => {
             });
 
             await targetMessage.delete();
-            await interaction.reply({ content: 'Member created and message proxied successfully.', ephemeral: true });
-          } catch (error: any) {
-            await interaction.reply({ content: `Error: ${error.message}`, ephemeral: true });
+            await interaction.reply({ content: 'Member created and message proxied successfully.', flags: MessageFlags.Ephemeral });
+          } catch (error) {
+            await handleInteractionError({ interaction, error, customMessage: `Error: ${(error as Error).message}` });
           }
         }
       }
     } catch (error) {
-      logger.error('Error while handling interaction', error);
-
-      if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: 'Something went wrong while handling that interaction. Please try again later.',
-          ephemeral: true,
-        });
-      }
+      await handleInteractionError({ interaction, error });
     }
   });
 
