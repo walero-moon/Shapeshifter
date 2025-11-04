@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 
-import { FormService } from '../../../services/FormService';
-import { ProxyService } from '../../../services/ProxyService';
+import { FormService } from '../../../../services/FormService';
+import { ProxyService } from '../../../../services/ProxyService';
 
 export const execute = async (
     interaction: ChatInputCommandInteraction,
