@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, PermissionFlagsBits, ChannelType, InteractionContextType } from 'discord.js';
 
 import { GuildConfigService } from '../services/GuildConfigService';
 
@@ -10,7 +10,7 @@ export const command: SlashCommand = {
     data: new SlashCommandBuilder()
         .setName('config')
         .setDescription('Manage guild configuration')
-        .setDMPermission(false)
+        .setContexts([InteractionContextType.Guild])
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .addSubcommandGroup(group =>
             group

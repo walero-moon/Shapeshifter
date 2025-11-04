@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, InteractionContextType } from 'discord.js';
 
 import type { SlashCommand } from './_loader';
 import { ProxyService } from '../services/ProxyService';
@@ -14,7 +14,7 @@ export const command: SlashCommand = {
     data: new SlashCommandBuilder()
         .setName('proxy')
         .setDescription('Proxy commands')
-        .setDMPermission(false)
+        .setContexts([InteractionContextType.Guild])
         .addSubcommand(subcommand =>
             subcommand
                 .setName('send')

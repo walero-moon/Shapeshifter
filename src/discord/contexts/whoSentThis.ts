@@ -1,4 +1,4 @@
-import { ApplicationCommandType, ContextMenuCommandBuilder, PermissionFlagsBits, MessageContextMenuCommandInteraction } from 'discord.js';
+import { ApplicationCommandType, ContextMenuCommandBuilder, PermissionFlagsBits, MessageContextMenuCommandInteraction, InteractionContextType } from 'discord.js';
 import { eq } from 'drizzle-orm';
 
 import { db } from '../../db/client';
@@ -12,7 +12,7 @@ export const context: MessageContextCommand = {
     data: new ContextMenuCommandBuilder()
         .setName('Who sent this (proxy)?')
         .setType(ApplicationCommandType.Message)
-        .setDMPermission(false)
+        .setContexts([InteractionContextType.Guild])
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
     execute: async (interaction: MessageContextMenuCommandInteraction) => {
         await interaction.deferReply({ ephemeral: true });

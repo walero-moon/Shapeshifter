@@ -10,7 +10,7 @@
 A small, robust proxy bot that lets a user:
 
 * Create a **system** (one per Discord user).
-* Add **members** (name + optional avatar URL).
+* Add **forms** (name + optional avatar URL).
 * **Proxy** messages via **channel webhooks** so the message appears with the member’s name and avatar.
 * **Respect the originating user’s channel permissions** (no embeds/attachments/mentions the user couldn’t use).
 * **Delete** proxied messages via: message **context menu**, **🗑️ reaction**, and optional **reply keyword**.
@@ -42,7 +42,7 @@ We do **not** need Message Content for the MVP (slash/context first). If you lat
 **Monolith, modular**
 
 * **Discord adapter layer**: event/listener plumbing, command routing.
-* **Domain services**: `SystemService`, `MemberService`, `ProxyService`, `DeleteService`, `WebhookRegistry`.
+* **Domain services**: `SystemService`, `FormService`, `ProxyService`, `DeleteService`, `WebhookRegistry`.
 * **Middleware**: `PermissionGuard` that shapes outgoing messages to the caller’s effective channel perms.
 * **Persistence**: SQLite schema (systems, members, proxied_messages).
 
@@ -93,7 +93,7 @@ src/
       ProxyService.ts
       DeleteService.ts
       SystemService.ts
-      MemberService.ts
+      FormService.ts
     utils/
       allowedMentions.ts
       attachments.ts
@@ -162,7 +162,7 @@ File-based loaders + `scripts/register-commands.ts`. Support **message context m
 **T6 — SystemService + `/system create`**
 Idempotent create; ephemeral success.
 
-**T7 — MemberService + `/member add`**
+**T7 — FormService + `/form add`**
 Validate name (1–80) & optional avatar URL; store.
 
 **T8 — WebhookRegistry**

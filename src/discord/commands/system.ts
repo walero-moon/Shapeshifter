@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, InteractionContextType } from 'discord.js';
 
 import type { SlashCommand } from './_loader';
 import { SystemService } from '../services/SystemService';
@@ -9,7 +9,7 @@ export const command: SlashCommand = {
     data: new SlashCommandBuilder()
         .setName('system')
         .setDescription('Manage your system')
-        .setDMPermission(false)
+        .setContexts([InteractionContextType.Guild])
         .addSubcommand(subcommand =>
             subcommand
                 .setName('create')

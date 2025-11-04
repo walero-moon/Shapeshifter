@@ -1,9 +1,9 @@
-import { ApplicationCommandType, ContextMenuCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { ApplicationCommandType, ContextMenuCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionContextType } from 'discord.js';
 
-import { MemberService } from '../services/MemberService';
+import { FormService } from '../services/FormService';
 import type { MessageContextCommand } from './_loader';
 
-const memberService = new MemberService();
+const formService = new FormService();
 
 /**
  * Context menu command to proxy as a member using an existing message.
@@ -12,7 +12,7 @@ export const context: MessageContextCommand = {
     data: new ContextMenuCommandBuilder()
         .setName('Proxy as...')
         .setType(ApplicationCommandType.Message)
-        .setDMPermission(false),
+        .setContexts([InteractionContextType.Guild]),
     execute: async (interaction) => {
         const targetMessage = interaction.targetMessage;
 
@@ -24,7 +24,7 @@ export const context: MessageContextCommand = {
             return;
         }
 
-        const members = await memberService.getMembers(interaction.user.id);
+        const members = await formService.getForms(interaction.user.id);
 
         if (members.length === 0) {
             const modal = new ModalBuilder()

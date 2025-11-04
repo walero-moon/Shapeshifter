@@ -1,4 +1,4 @@
-import { ApplicationCommandType, ContextMenuCommandBuilder } from 'discord.js';
+import { ApplicationCommandType, ContextMenuCommandBuilder, InteractionContextType } from 'discord.js';
 
 import { DeleteService } from '../services/DeleteService';
 import { WebhookRegistry } from '../services/WebhookRegistry';
@@ -14,7 +14,7 @@ export const context: MessageContextCommand = {
     data: new ContextMenuCommandBuilder()
         .setName('Delete proxied message')
         .setType(ApplicationCommandType.Message)
-        .setDMPermission(false),
+        .setContexts([InteractionContextType.Guild]),
     execute: async (interaction) => {
         const targetMessageId = interaction.targetMessage.id;
         const channel = interaction.channel as any; // GuildTextBasedChannel
