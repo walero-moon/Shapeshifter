@@ -1,5 +1,4 @@
 import { formRepo } from '../infra/FormRepo';
-import { aliasRepo } from '../infra/AliasRepo';
 
 /**
  * Delete a form and all its aliases
@@ -14,14 +13,6 @@ export async function deleteForm(formId: string): Promise<void> {
         throw new Error(`Form not found`);
     }
 
-    // First delete all aliases associated with the form
-    const aliases = await aliasRepo.getByForm(formId);
-
-    // Delete each alias
-    for (const alias of aliases) {
-        await aliasRepo.delete(alias.id);
-    }
-
-    // Then delete the form itself
+    // Delete the form itself; aliases are removed via ON DELETE CASCADE
     await formRepo.delete(formId);
 }

@@ -165,7 +165,7 @@ describe('createForm function', () => {
             skippedAliases: [
                 {
                     triggerRaw: 'n:text',
-                    reason: 'Trigger already exists',
+                    reason: 'Alias already exists',
                 },
             ],
         });
@@ -245,7 +245,7 @@ describe('deleteForm function', () => {
         vi.clearAllMocks();
     });
 
-    it('should delete form and all its aliases', async () => {
+    it('should delete form and all its aliases via cascade', async () => {
         // Mock form exists
         const mockForm = {
             id: 'form1',
@@ -255,30 +255,16 @@ describe('deleteForm function', () => {
             createdAt: new Date(),
         };
 
-        // Mock aliases for the form
-        const mockAliases = [
-            {
-                id: 'alias1',
-                userId: 'user1',
-                formId: 'form1',
-                triggerRaw: 'test:text',
-                triggerNorm: 'test:text',
-                kind: 'prefix' as const,
-                createdAt: new Date(),
-            },
-        ];
-
         vi.mocked(formRepo.getById).mockResolvedValue(mockForm);
-        vi.mocked(aliasRepo.getByForm).mockResolvedValue(mockAliases);
 
         await deleteForm('form1');
 
-        // Should delete all aliases first
-        expect(aliasRepo.getByForm).toHaveBeenCalledWith('form1');
-        expect(aliasRepo.delete).toHaveBeenCalledWith('alias1');
-
-        // Then delete the form
+        // Should only delete the form; aliases are removed via ON DELETE CASCADE
         expect(formRepo.delete).toHaveBeenCalledWith('form1');
+
+        // No manual alias operations
+        expect(aliasRepo.getByForm).not.toHaveBeenCalled();
+        expect(aliasRepo.delete).not.toHaveBeenCalled();
     });
 
     it('should handle form not found', async () => {

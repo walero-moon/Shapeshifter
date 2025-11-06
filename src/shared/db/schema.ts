@@ -13,7 +13,7 @@ export const aliasKindEnum = pgEnum('alias_kind', ['prefix', 'pattern']);
 export const aliases = pgTable('aliases', {
     id: uuid('id').primaryKey(),
     userId: text('user_id').notNull(),
-    formId: uuid('form_id').references(() => forms.id).notNull(),
+    formId: uuid('form_id').references(() => forms.id, { onDelete: 'cascade' }).notNull(),
     triggerRaw: text('trigger_raw').notNull(),
     triggerNorm: text('trigger_norm').notNull(),
     kind: aliasKindEnum('kind').notNull(),
@@ -25,7 +25,7 @@ export const aliases = pgTable('aliases', {
 export const proxiedMessages = pgTable('proxied_messages', {
     id: uuid('id').primaryKey(),
     userId: text('user_id').notNull(),
-    formId: uuid('form_id').references(() => forms.id).notNull(),
+    formId: uuid('form_id').references(() => forms.id, { onDelete: 'cascade' }).notNull(),
     guildId: text('guild_id').notNull(),
     channelId: text('channel_id').notNull(),
     webhookId: text('webhook_id').notNull(),

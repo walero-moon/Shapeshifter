@@ -29,7 +29,7 @@ export interface FormRepo {
  * Provides database operations for form management with time-ordered UUIDs
  */
 export class DrizzleFormRepo implements FormRepo {
-async create(userId: string, data: CreateFormData): Promise<Form> {
+  async create(userId: string, data: CreateFormData): Promise<Form> {
     if (!data.name?.trim()) {
       throw new Error('Form name is required');
     }
@@ -99,12 +99,7 @@ async create(userId: string, data: CreateFormData): Promise<Form> {
   }
 
   async delete(id: string): Promise<void> {
-    const result = await db.delete(forms).where(eq(forms.id, id));
-
-    // In Drizzle, if no rows were affected, the result array will be empty
-    if (result.length === 0) {
-      throw new Error('Form not found');
-    }
+    await db.delete(forms).where(eq(forms.id, id));
   }
 }
 

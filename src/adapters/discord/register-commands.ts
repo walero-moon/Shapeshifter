@@ -1,8 +1,10 @@
 import { registry } from './registry';
 import { command as pingCommand } from '../../features/health/discord/ping';
+import { command as formCommand } from '../../features/identity/discord/form';
 
 // Register commands before deploying
 registry.registerCommand(pingCommand);
+registry.registerCommand(formCommand);
 
 const scope = process.argv[2] as 'guild' | 'global';
 

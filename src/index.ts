@@ -1,9 +1,13 @@
-import { Events, ChatInputCommandInteraction } from 'discord.js';
+import { Events } from 'discord.js';
 import { client } from './adapters/discord/client';
 import { registry } from './adapters/discord/registry';
 import { command as pingCommand } from './features/health/discord/ping';
 
 // Register commands with the registry
+import { command as formCommand } from './features/identity/discord/form';
+
+// Register commands with the registry
+registry.registerCommand(formCommand);
 registry.registerCommand(pingCommand);
 
 // Enhanced ready event with comprehensive logging
@@ -30,37 +34,52 @@ client.once(Events.ClientReady, (readyClient) => {
 // Enhanced interaction handler with better error handling and logging
 client.on(Events.InteractionCreate, async (interaction) => {
     try {
-        // Skip non-command interactions
-        if (!interaction.isChatInputCommand()) return;
+        if (interaction.isChatInputCommand()) {
+            const command = registry.getCommand(interaction.commandName);
 
-        const command = registry.getCommand(interaction.commandName);
+            if (!command) {
+                console.warn(`❌ Command '${interaction.commandName}' not found in registry`);
+                return;
+            }
 
-        if (!command) {
-            console.warn(`❌ Command '${interaction.commandName}' not found in registry`);
-            return;
+            console.log(`📝 Executing command: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
+            console.log(`sub-command: ${interaction.options.getSubcommand()}`)
+            console.log(`options: ${JSON.stringify(interaction.options.data)}`)
+
+            // Execute command with enhanced error handling
+            await command.execute(interaction);
+
+            console.log(`✅ Command /${interaction.commandName} executed successfully`);
+        } else if (interaction.isAutocomplete()) {
+            const handler = registry.getAutocompleteHandler(interaction.commandName);
+            if (handler) {
+                await handler(interaction);
+            }
+        } else if (interaction.isButton()) {
+            const handler = registry.getButtonHandler(interaction.customId);
+            if (handler) {
+                await handler(interaction);
+            }
+        } else if (interaction.isModalSubmit()) {
+            const handler = registry.getModalHandler(interaction.customId);
+            if (handler) {
+                await handler(interaction);
+            }
         }
-
-        console.log(`📝 Executing command: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
-
-        // Execute command with enhanced error handling
-        await command.execute(interaction as ChatInputCommandInteraction);
-
-        console.log(`✅ Command /${interaction.commandName} executed successfully`);
     } catch (error) {
-        console.error(`❌ Error executing unknown command:`, error);
+        console.error(`❌ Error executing interaction:`, error);
 
         // Provide more user-friendly error messages
         const errorMessage = {
-            content: '🚫 There was an error while executing this command! Please try again later.',
+            content: '🚫 There was an error while executing this interaction! Please try again later.',
             ephemeral: true
         };
 
         // Try to respond appropriately based on interaction state
-        const chatInteraction = interaction as ChatInputCommandInteraction;
-        if (chatInteraction.replied || chatInteraction.deferred) {
-            await chatInteraction.followUp(errorMessage);
-        } else {
-            await chatInteraction.reply(errorMessage);
+        if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+            await interaction.reply(errorMessage);
+        } else if (interaction.isRepliable()) {
+            await interaction.followUp(errorMessage);
         }
     }
 });
