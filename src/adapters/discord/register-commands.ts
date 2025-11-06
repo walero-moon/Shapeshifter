@@ -1,4 +1,8 @@
 import { registry } from './registry';
+import { command as pingCommand } from '../../features/health/discord/ping';
+
+// Register commands before deploying
+registry.registerCommand(pingCommand);
 
 const scope = process.argv[2] as 'guild' | 'global';
 

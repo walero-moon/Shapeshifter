@@ -1,4 +1,4 @@
-import { Client, Events, PermissionFlagsBits, ChatInputCommandInteraction } from 'discord.js';
+import { Events, ChatInputCommandInteraction } from 'discord.js';
 import { client } from './adapters/discord/client';
 import { registry } from './adapters/discord/registry';
 import { command as pingCommand } from './features/health/discord/ping';

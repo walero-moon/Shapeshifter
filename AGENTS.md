@@ -1,188 +1,223 @@
-# AI.md — Shapeshift Project Guide (for Agentic AIs)
+# AGENTS.md — Contributor Guide for Agentic AIs
 
-## What Shapeshift is
+## 1) What this project is
 
-Shapeshift is a modern Discord bot that lets a user speak as different **forms** (personas with name + avatar). Users define **aliases** (triggers containing the literal word `text`, e.g., `neoli:text` or `{text}`) and can then proxy messages through webhooks so they appear as that form. The bot supports slash commands, context menus, tag-based proxying, editing/deleting proxied messages, and a reply-style presentation when responding to another message.
+**Shapeshift** is a modern Discord bot that lets a user speak as different **forms** (name + avatar). Users define **aliases**—triggers that **must** contain the literal word `text` (e.g., `neoli:text`, `{text}`)—and can proxy messages through **webhooks** so they appear as that form.
 
-* **Scope model:** global per user (no `/system` UI), with room for future per-guild overrides.
-* **Goal:** provide a clean, safe, robust alternative to PluralKit/Tupperbox with clearer UX, edit support, and a future web dashboard.
-
-## Terminology
-
-* **Form** — the persona object (name + avatar).
-* **Alias** — a trigger that **must** contain the literal word `text`. Users “pretend” they type `text`, and at runtime it’s replaced by the actual content (e.g., `n:text` → `n: hello`).
-* **Proxy** — sending the message via channel webhook with per-message `username`/`avatar_url` so it renders as the form.
-* **Reply-style** — since webhooks can’t create *real* replies, render a tiny header “↩︎ Replying to @user”, a one-line quote preview, and (optionally) a **Jump** link button to the original. (See Constraints & Discord Rules below.)
-
-## North-star outcomes
-
-* Simple, respectful UX that works for role-play and plurality communities alike.
-* Robust message pipeline (send/edit/delete) with tight permissions and safety.
-* Architecture that cleanly supports a future **web dashboard** (HTTP adapter) using the same use-cases.
+* **Scope model:** global per user (no `/system` UI), with room for per-guild overrides later.
+* **Primary goals:** clear UX, robust proxy pipeline (send/edit/delete), reply-style rendering, and a future **web dashboard** using the *same* use-cases.
 
 ---
 
-## Architecture (high level)
+## 2) Terminology
 
-We use a **hybrid** approach: **Vertical Slices** for features, plus **Ports & Adapters** so the core stays Discord-agnostic.
+* **Form** – persona object (name + avatar).
+* **Alias** – trigger containing the literal `text`. The user types `text` in context; at runtime we replace it with actual message content.
+* **Proxy** – send via a channel webhook with per-message `username`/`avatar_url`.
+* **Reply-style** – because webhooks can’t create real replies, we render a tiny header (`↩︎ Replying to @user`), 1-line quote, and optional “Jump” link. Webhooks **can** edit/delete their own messages via the edit endpoint. ([Discord][1])
+
+---
+
+## 3) Tech Stack
+
+* **Runtime:** Node 22+, TypeScript (ESM), **discord.js v14**.
+* **DB:** PostgreSQL (Docker Compose). Official image requires `POSTGRES_PASSWORD`; `POSTGRES_USER`/`POSTGRES_DB` supported. ([Docker Hub][2])
+* **ORM:** Drizzle ORM (Postgres driver). ([Drizzle ORM][3])
+* **Tests:** Vitest.
+* **Lint:** ESLint (TypeScript rules).
+* **Logging:** Pino (JSON in prod, pretty in dev). ([Pino][4])
+
+---
+
+## 4) Architecture & folders (hybrid Vertical Slices + Adapters)
+
+We combine **Vertical Slices** (features) with **Ports & Adapters** (Discord/web/database isolated behind interfaces).
 
 ```
 src/
   features/
-    identity/                # Forms + Aliases (one module)
-      app/                   # use-cases (Discord-agnostic)
-      infra/                 # Drizzle repos for this module
-      discord/               # command handlers for this module
-    proxy/                   # Messaging pipeline & ops
-      app/
-      infra/
-      discord/
+    identity/                 # Forms + Aliases (one aggregate)
+      app/                    # use-cases (Discord-agnostic)
+      infra/                  # Drizzle repos for this module
+      discord/                # command handlers for this module
+    proxy/                    # Messaging pipeline & ops
+      app/                    # send/edit/delete, matcher, reply-style
+      infra/                  # proxied_messages repo
+      discord/                # listener + context menus + /send
   shared/
-    ports/                   # ChannelProxyPort (send/edit/delete)
-    db/                      # drizzle client & schema
-    utils/                   # cross-cutting helpers
+    ports/
+      ChannelProxyPort.ts     # { send, edit, delete }
+    db/
+      client.ts
+      schema.ts
+    utils/
+      allowedMentions.ts, username.ts, ...
   adapters/
     discord/
-      client.ts              # boot, intents
-      registry.ts            # discovers feature handlers & mounts them
-      register-commands.ts   # guild/global deploy
-      DiscordChannelProxy.ts # implements ChannelProxyPort via webhooks
+      client.ts               # boot, intents
+      registry.ts             # mounts handlers exported by features
+      register-commands.ts    # guild/global deploy
+      DiscordChannelProxy.ts  # implements ChannelProxyPort via webhooks
 ```
 
-* **identity** owns: create/edit/delete form; add/list/remove alias; alias rules (literal `text`, longest-prefix wins); defaults (`name:` and `first-letter:` on create, skipping collisions).
-* **proxy** owns: tag matcher & `/send`; context menus (proxy as, edit, delete, who); reply-style; storage of webhook ids/tokens/message ids; uses **ChannelProxyPort**.
+* **identity** owns: create/edit/delete form; add/list/remove alias; rules (literal `text`, longest-prefix wins); auto-defaults on create (`name:` and first-letter `n:` if not colliding).
+* **proxy** owns: tag-based proxy, `/send`, context menus, reply-style formatting, storing `webhook_id/token/message_id` and using **ChannelProxyPort**.
 
-**Database:** PostgreSQL via **Drizzle ORM**. Initial tables:
+---
+
+## 5) Command & UI surface
+
+* **/form** — `add`, `edit`, `delete`, `list` (list is paginated; edits via **Modal**)
+* **/alias** — `add <form> <trigger-with-text>`, `list <form>`, `remove <id>`
+* **/send** — send as a form directly
+* **Context menus (Message)** — Proxy as…, Edit proxied…, Delete proxied…, Who sent this?
+
+**Discord constraints you must honor:**
+
+* **Acknowledge interactions within ~3 seconds** or defer; otherwise the token is invalid. ([Discord][5])
+* **Components limits:** a message can have **up to 5 action rows**; each row can have **up to 5 buttons** or **one select**. Use pagination UIs when needed. ([Discord][6])
+* **Webhooks:** can **send/edit/delete** their messages; use **Edit Webhook Message** for edits. There is **no true reply** API for webhooks—simulate with a header/quote and optional jump link. ([Discord][1])
+* **Allowed Mentions:** always set; default to **no pings** unless explicitly required. ([Discord][7])
+* **Command deployment:** use **guild-scoped** for development (near-instant); **global** updates may take **up to ~1 hour** to propagate. ([Discord][8])
+
+---
+
+## 6) Database model (initial)
 
 * `forms(id, user_id, name, avatar_url, created_at)`
-* `aliases(id, user_id, form_id, trigger_raw, trigger_norm, kind('prefix'|'pattern'), created_at)` with **unique (user_id, trigger_norm)**
+* `aliases(id, user_id, form_id, trigger_raw, trigger_norm, kind('prefix'|'pattern'), created_at)`
+
+  * **Unique (user_id, trigger_norm)** per user.
 * `proxied_messages(id, user_id, form_id, guild_id, channel_id, webhook_id, webhook_token, message_id, created_at)`
 
-**Why:** This keeps feature work isolated (fast PRs), while Discord/web specifics remain adapters so a **web dashboard** can reuse the same use-cases later.
+**Drizzle Postgres:** connect via `DATABASE_URL` (node-postgres or postgres.js). Use `drizzle.config.ts` with dotenv so CLI sees env. ([Drizzle ORM][3])
 
 ---
 
-## Command surface (initial)
+## 7) Quality Gate (MANDATORY for every change)
 
-* **/form** — `add`, `edit`, `delete`, `list` (list is paginated; edits via modal)
-* **/alias** — `add <form> <trigger-with-text>`, `list <form>`, `remove <id>`
-* **/send** — send as a form directly (or keep under `/form send`)
-* **Context menus (Message):** Proxy as…, Edit proxied…, Delete proxied…, Who sent this?
+Before marking any task **complete**, you MUST verify all of the following:
 
----
+1. **Build & Types**
 
-## Constraints & Discord rules (must follow)
+   * `pnpm build` succeeds and produces a clean `dist/`.
+   * No TypeScript errors or IDE highlights remain.
 
-* **Acknowledge interactions within ~3 seconds.** If work may take longer, use a deferred response and follow up; otherwise the token is invalidated. ([discord.js Guide][1])
-* **Components layout limits:** at most **5 action rows** per message; each row can hold **up to 5 buttons** or **one select menu**. Use pagination UIs when listing many items. ([discord.js Guide][2])
-* **Webhooks can edit/delete their own messages** and support per-message `username`/`avatar_url`. Use the **Edit Webhook Message** endpoint for edits; store `webhook_id`, `webhook_token`, and `message_id`. (Webhooks cannot create true replies—render the reply-style header/quote instead.) ([Discord][3])
-* **Allowed mentions:** always set and default to “no pings” unless explicitly intended; control `@everyone/@here`, role, and user mentions. ([Discord][4])
-* **Command deployment:** use **guild-scoped** commands for fast iteration; **global** commands can take up to ~1 hour to propagate. ([Discord4J Docs][5])
+2. **Lint**
 
----
+   * `pnpm lint` passes with **no errors** (warnings addressed or justified inline).
 
-## Environment & tooling
+3. **Runtime sanity**
 
-* Node 22+, TypeScript (ESM), **discord.js v14**.
-* Postgres via Docker Compose (official image requires `POSTGRES_PASSWORD`; add `POSTGRES_USER` and `POSTGRES_DB` as needed). ([Docker Hub][6])
-* Drizzle ORM Postgres (node-postgres driver). ([Drizzle ORM][7])
+   * `pnpm dev` runs; `/ping` in the dev guild replies **ephemerally** and **acknowledges within ~3s** (or defers first). ([Discord][5])
+   * If you changed Discord interactions, verify **guild** command deploy works; don’t rely on slow global propagation. ([Discord][8])
 
----
+4. **Functional proof**
 
-## Operating principles for AI contributors
+   * If you added meaningful logic: provide **unit tests** *or* a manual E2E verification note. At minimum, run the application and prove the flow.
 
-### 0) Safety & scope
+5. **Discord safety**
 
-* **Do not** change public command names/parameters or data shapes without an explicit instruction in the task.
-* **Never** commit secrets; assume `.env` and Docker secrets are used.
-* **Default to no pings** (Allowed Mentions denied) unless a task explicitly allows them.
+   * Set **Allowed Mentions** appropriately (default none). ([Discord][7])
+   * Respect component limits; prefer paginated lists over overflowing rows. ([Discord][6])
 
-### 1) Plan → Diff → Implement → Test → Document
+6. **DB migrations**
 
-* **Plan:** state intent, impacted files, and acceptance checks.
-* **Diff:** propose minimal file changes (aim for ≤ ~400 LOC per PR).
-* **Implement:** follow the folder/ports layout above.
-* **Test:** run code and/or unit tests locally (see Quality Gate below).
-* **Document:** update inline docs/comments and the relevant section in this file or README if you changed behavior or setup.
-
-### 2) Quality gate (mandatory)
-
-Before marking any task **complete**, you **must** ensure:
-
-* **Build passes:** `pnpm build` produces a clean `dist/`.
-* **Type checks clean:** no TypeScript errors or IDE highlights.
-* **Lint passes:** `pnpm lint` shows **no** errors (warnings should be addressed or justified).
-* **Runtime sanity:** the bot starts (`pnpm dev` or `pnpm start`) and can reply to `/ping` in the dev guild.
-* **If you added logic:** either unit tests (Vitest) **or** an end-to-end manual run proving the change; **at minimum** the app must run without errors.
-
-> Interactions must be acknowledged within ~3s; if your code calls Discord or the database, **defer** first then follow up. ([discord.js Guide][1])
-
-### 3) Coding standards
-
-* Keep business logic Discord-agnostic in `features/*/app`.
-* Use **ports** for outbound effects (sending/editing messages), implemented in `adapters/discord`.
-* Avoid premature abstractions. Share helpers only when they’re truly cross-feature (`shared/utils`).
-* Validate inputs with Zod at the adapter boundary when appropriate.
-* Prefer **clear names** over cleverness; prefer pure functions in the app layer.
-* Keep functions short and focused; write doc-comments for non-obvious logic.
-
-### 4) Database rules
-
-* Use Drizzle ORM for reads/writes; migrations live in `drizzle/`.
-* Enforce alias uniqueness via `(user_id, trigger_norm)`.
-* Normalize alias triggers (case-fold, trim, collapse spaces); **require** the literal `text`.
-
-### 5) Discord UX rules
-
-* **Ephemeral** for management flows (`/form list`, `/alias list`, confirmations).
-* Component pagination for long lists (respect the **5 rows / 5 buttons** rule). ([discord.js Guide][2])
-* Always set **Allowed Mentions**; default to none. ([Discord][4])
-* For replies, render reply-style header/quote; don’t attempt “true” webhook replies. (Webhooks can edit/delete via token.) ([Discord][3])
+   * Update Drizzle schema+migration when data shapes change; run `generate` + `migrate` locally without errors. ([Drizzle ORM][3])
 
 ---
 
-## What to build first (high-level order)
+## 8) Workflow for AI agents
 
-1. **Bootstrap & DB wiring** (dockerized Postgres, Drizzle base, `/ping`, guild deploy).
-2. **Forms (identity) MVP** — add/list/edit/delete; on add, auto-create `name:` and first-letter `n:` defaults (skip collisions).
-3. **Aliases** — `add` (must include `text`), `list`, `remove`; longest-prefix matching policy in the matcher.
-4. **Proxy** — tag listener + `/send`; webhook registry; store ids/tokens/message ids.
-5. **Context menus** — proxy as, edit, delete, who.
-6. **Reply-style** — header/quote/Jump button.
+**Plan → Diff → Implement → Test → Document**
 
----
+* **Plan**: Write a brief stating intent, files to touch, acceptance checks.
+* **Diff**: Keep PRs small (target ≤ ~400 LOC). Avoid sweeping refactors.
+* **Implement**:
 
-## Local development quickstart
+  * Put business logic in `features/*/app` (Discord-agnostic).
+  * Use `shared/ports` for outbound effects; implement in `adapters/discord`.
+  * Keep helpers in `shared/utils` only if truly cross-feature.
+* **Test**: Run the app and/or unit tests; confirm 3-second interaction rule adherence. ([discord.js Guide][9])
+* **Document**: Update README/AI.md/this file if behavior or setup changed.
 
-* `docker compose up -d db` — start Postgres (official image requires `POSTGRES_PASSWORD`). ([Docker Hub][6])
-* `pnpm db:generate && pnpm db:migrate` — generate/apply migrations. ([Drizzle ORM][7])
-* `pnpm deploy:guild` — register commands to the dev guild (fast). (Global commands may take up to ~1 hour to appear—use guild during development.) ([Discord4J Docs][5])
-* `pnpm dev` — start the bot; verify `/ping` responds **ephemerally** and handlers **ack** in time. ([discord.js Guide][1])
+**Never do**:
 
----
-
-## References
-
-* **Interactions: responding & timing** (3-second acknowledgment, deferrals). ([discord.js Guide][1])
-* **Components limits** (action rows, buttons, select menus). ([discord.js Guide][2])
-* **Webhook resource** (execute/edit/delete; allowed mentions). ([Discord][3])
-* **Allowed Mentions** (suppress pings safely). ([Discord][4])
-* **Command deploy: guild vs global & propagation** (guild instant, global may take ~1h). ([Discord4J Docs][5])
-* **Drizzle ORM Postgres quickstart**. ([Drizzle ORM][7])
-* **Postgres Docker image envs** (POSTGRES_PASSWORD required). ([Docker Hub][6])
+* Change public command names/params or persisted data shapes without an explicit ticket.
+* Commit secrets; always use `.env`/Docker secrets.
+* Send messages without setting **Allowed Mentions** explicitly. ([Discord][7])
 
 ---
 
-### Final reminder to any AI agent
+## 9) Local dev quickstart
 
-* Keep PRs **small** and **focused** (≤ ~400 LOC).
-* **Don’t guess** Discord behavior—check the docs referenced above.
-* **Prove it works** (build, lint, typecheck, run, and/or tests) **before** calling a task done.
+```bash
+# start database (Docker)
+docker compose up -d db
 
-[1]: https://discordjs.guide/slash-commands/response-methods?utm_source=chatgpt.com "Command Responses | discord.js"
-[2]: https://discordjs.guide/interactive-components/action-rows?utm_source=chatgpt.com "Action Rows | discord.js"
-[3]: https://discord.com/developers/docs/resources/webhook?utm_source=chatgpt.com "Webhook Resource | Documentation"
-[4]: https://discord.com/developers/docs/resources/message?utm_source=chatgpt.com "Messages Resource | Documentation"
-[5]: https://docs.discord4j.com/interactions/application-commands?utm_source=chatgpt.com "Application Commands"
-[6]: https://hub.docker.com/_/postgres?utm_source=chatgpt.com "postgres - Official Image"
-[7]: https://orm.drizzle.team/docs/get-started/postgresql-new?utm_source=chatgpt.com "Get Started with Drizzle and PostgreSQL"
+# create/apply migrations
+pnpm db:generate && pnpm db:migrate
+
+# register commands to dev guild (fast)
+pnpm deploy:guild
+
+# run the bot
+pnpm dev
+```
+
+* Postgres (official image) needs `POSTGRES_PASSWORD`; you can also set `POSTGRES_USER` and `POSTGRES_DB`. ([Docker Hub][2])
+* Drizzle Postgres quickstart and existing-project guides here. ([Drizzle ORM][3])
+
+---
+
+## 10) Logging standard
+
+Use **Pino** with a tiny wrapper:
+
+* **Dev**: pretty transport; **Prod**: JSON to stdout.
+* Include stable fields: `component`, `guildId`, `channelId`, `userId`, `interactionId`, `route`, `status`.
+* Don’t use `console.log`; always use the logger. ([Pino][4])
+
+---
+
+## 11) Discord specifics to remember
+
+* **Interactions:** reply or defer within **~3s**; then follow up/edit. ([Discord][5])
+* **Components:** ≤ **5** action rows/message; a row holds **≤ 5 buttons** *or* **1 select**. ([Discord][6])
+* **Webhooks:** execute → store `message_id`; later **Edit Webhook Message** for edits. There is no true reply for webhooks; render reply-style instead. ([Discord][1])
+* **Allowed Mentions:** explicitly set on sends/edits (avoid accidental pings). ([Discord][7])
+* **Guild vs Global commands:** use guild during development; global may take **up to ~1 hour**. ([Discord][8])
+
+---
+
+## 12) PR sequencing (reference)
+
+1. Bootstrap + DB wiring + `/ping`
+2. **Identity**: /form add/list/edit/delete (auto-default aliases)
+3. **Aliases**: /alias add/list/remove (must include `text`; normalize; longest-prefix policy readied)
+4. **Proxy**: tag listener + `/send` + webhook registry (store ids/tokens/message ids)
+5. **Message ops**: context menus (proxy as / edit / delete / who)
+6. **Reply-style**: header + 1-line quote + optional Jump link
+7. (Later) Autoproxy/hold, per-guild overrides, dashboard HTTP adapter
+
+---
+
+### Final reminder for agents
+
+* Keep changes **small and surgical**.
+* Respect the **3-second** interaction rule, component limits, and webhook realities. ([Discord][5])
+* **Prove it works** (build, lint, typecheck, run and/or tests) *before* declaring a task done.
+* At the end of every PR/change, give small instructions/a small guide of the most important changes
+to look at and review first, so that the path/flow of the application can be traced.
+
+---
+
+[1]: https://discord.com/developers/docs/resources/webhook?utm_source=chatgpt.com "Webhook Resource | Documentation"
+[2]: https://hub.docker.com/_/postgres?utm_source=chatgpt.com "postgres - Official Image"
+[3]: https://orm.drizzle.team/docs/get-started/postgresql-new?utm_source=chatgpt.com "Get Started with Drizzle and PostgreSQL"
+[4]: https://getpino.io/?utm_source=chatgpt.com "Pino"
+[5]: https://discord.com/developers/docs/interactions/receiving-and-responding?utm_source=chatgpt.com "Interactions | Documentation | Discord Developer Portal"
+[6]: https://discord.com/developers/docs/components/reference?utm_source=chatgpt.com "Component Reference | Documentation"
+[7]: https://discord.com/developers/docs/resources/channel?utm_source=chatgpt.com "Channels Resource | Documentation"
+[8]: https://discord.com/developers/docs/interactions/application-commands?utm_source=chatgpt.com "Application Commands | Documentation"
+[9]: https://discordjs.guide/slash-commands/response-methods?utm_source=chatgpt.com "Command Responses | discord.js"

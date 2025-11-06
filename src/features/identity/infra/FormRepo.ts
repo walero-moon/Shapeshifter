@@ -1,0 +1,112 @@
+import { eq } from 'drizzle-orm';
+import { db } from '../../../shared/db/client';
+import { forms } from '../../../shared/db/schema';
+import { generateUuidv7OrUndefined } from '../../../shared/db/uuidDetection';
+
+export interface CreateFormData {
+  name: string;
+  avatarUrl?: string | null;
+}
+
+export interface Form {
+  id: string;
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+  createdAt: Date;
+}
+
+export interface FormRepo {
+  create(userId: string, data: CreateFormData): Promise<Form>;
+  getById(id: string): Promise<Form | null>;
+  getByUser(userId: string): Promise<Form[]>;
+  updateNameAvatar(id: string, data: Partial<CreateFormData>): Promise<Form>;
+  delete(id: string): Promise<void>;
+}
+
+/**
+ * Form Repository using Drizzle ORM with UUIDv7 support
+ * Provides database operations for form management with time-ordered UUIDs
+ */
+export class DrizzleFormRepo implements FormRepo {
+async create(userId: string, data: CreateFormData): Promise<Form> {
+    if (!data.name?.trim()) {
+      throw new Error('Form name is required');
+    }
+
+    // Generate UUIDv7 if database doesn't support it natively
+    const id = await generateUuidv7OrUndefined();
+
+    // Create insert data without id initially
+    const insertData: Partial<typeof forms.$inferInsert> = {
+      userId,
+      name: data.name.trim(),
+      avatarUrl: data.avatarUrl?.trim() || null,
+    };
+
+    // Only include id if we need to generate it in the application layer
+    if (id) {
+      insertData.id = id;
+    }
+
+    const result = await db.insert(forms).values(insertData as typeof forms.$inferInsert).returning();
+
+    const form = result[0];
+    if (!form) {
+      throw new Error('Failed to create form');
+    }
+    return form;
+  }
+
+  async getById(id: string): Promise<Form | null> {
+    const result = await db.select().from(forms).where(eq(forms.id, id));
+    return result[0] || null;
+  }
+
+  async getByUser(userId: string): Promise<Form[]> {
+    const result = await db.select().from(forms).where(eq(forms.userId, userId));
+    return result;
+  }
+
+  async updateNameAvatar(id: string, data: Partial<CreateFormData>): Promise<Form> {
+    const updateData: { name?: string; avatarUrl?: string | null } = {};
+
+    if (data.name !== undefined) {
+      if (!data.name?.trim()) {
+        throw new Error('Form name cannot be empty');
+      }
+      updateData.name = data.name.trim();
+    }
+
+    if (data.avatarUrl !== undefined) {
+      updateData.avatarUrl = data.avatarUrl?.trim() || null;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new Error('No fields to update');
+    }
+
+    const result = await db.update(forms)
+      .set(updateData)
+      .where(eq(forms.id, id))
+      .returning();
+
+    const form = result[0];
+    if (!form) {
+      throw new Error('Form not found');
+    }
+    return form;
+  }
+
+  async delete(id: string): Promise<void> {
+    const result = await db.delete(forms).where(eq(forms.id, id));
+
+    // In Drizzle, if no rows were affected, the result array will be empty
+    if (result.length === 0) {
+      throw new Error('Form not found');
+    }
+  }
+}
+
+// Export a singleton instance for use in use cases
+export const formRepo = new DrizzleFormRepo();
