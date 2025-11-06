@@ -2,6 +2,7 @@ import { SlashCommandSubcommandBuilder, ChatInputCommandInteraction, MessageFlag
 import { createForm } from '../app/CreateForm';
 import { DEFAULT_ALLOWED_MENTIONS } from '../../../shared/utils/allowedMentions';
 import { URL } from 'url';
+import log from '../../../shared/utils/logger';
 
 export const data = new SlashCommandSubcommandBuilder()
     .setName('add')
@@ -74,7 +75,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
             allowedMentions: DEFAULT_ALLOWED_MENTIONS
         });
     } catch (error) {
-        console.error('Error creating form:', error);
+        log.error('Error creating form', {
+            component: 'identity',
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            status: 'error'
+        });
         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         return interaction.editReply({
             content: `Failed to create form: ${errorMessage}`,

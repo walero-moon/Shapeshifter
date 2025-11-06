@@ -11,6 +11,7 @@ import { editForm } from '../app/EditForm';
 import { listForms } from '../app/ListForms';
 import { DEFAULT_ALLOWED_MENTIONS } from '../../../shared/utils/allowedMentions';
 import { URL } from 'url';
+import log from '../../../shared/utils/logger';
 
 export const data = new SlashCommandSubcommandBuilder()
     .setName('edit')
@@ -141,7 +142,13 @@ export async function handleModalSubmit(interaction: ModalSubmitInteraction) {
             ephemeral: true
         });
     } catch (error) {
-        console.error('Error editing form:', error);
+        log.error('Error editing form', {
+            component: 'identity',
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined,
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error'
+        });
         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         return interaction.reply({
             content: `Failed to edit form: ${errorMessage}`,

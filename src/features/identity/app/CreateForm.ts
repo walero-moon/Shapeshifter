@@ -1,6 +1,7 @@
 import { formRepo } from '../infra/FormRepo';
 import { aliasRepo } from '../infra/AliasRepo';
 import { normalizeAlias, getAliasKind } from './normalizeAlias';
+import log from '../../../shared/utils/logger';
 
 export interface CreateFormInput {
     name: string;
@@ -116,7 +117,11 @@ export async function createForm(userId: string, input: CreateFormInput): Promis
             await formRepo.delete(form.id);
         } catch (cleanupError) {
             // Log cleanup error but don't throw it
-            console.error('Failed to cleanup form after alias creation error:', cleanupError);
+            log.error('Failed to cleanup form after alias creation error', {
+                component: 'identity',
+                error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+                status: 'cleanup_error'
+            });
         }
 
         throw error; // Re-throw the original error

@@ -8,16 +8,31 @@ registry.registerCommand(formCommand);
 
 const scope = process.argv[2] as 'guild' | 'global';
 
+import { log } from '../../shared/utils/logger';
+
 if (!scope || (scope !== 'guild' && scope !== 'global')) {
-    console.error('Usage: ts-node src/adapters/discord/register-commands.ts <guild|global>');
+    log.error('Invalid usage', {
+        component: 'register-commands',
+        usage: 'ts-node src/adapters/discord/register-commands.ts <guild|global>',
+        status: 'error'
+    });
     process.exit(1);
 }
 
 registry.deployCommands(scope)
     .then(() => {
-        console.log(`Commands deployed to ${scope} scope successfully.`);
+        log.info(`Commands deployed successfully`, {
+            component: 'register-commands',
+            scope,
+            status: 'success'
+        });
     })
     .catch((error) => {
-        console.error('Error deploying commands:', error);
+        log.error('Error deploying commands', {
+            component: 'register-commands',
+            scope,
+            error: error.message,
+            status: 'error'
+        });
         process.exit(1);
     });

@@ -1,6 +1,7 @@
 import { SlashCommandSubcommandBuilder, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { deleteForm } from '../app/DeleteForm';
 import { DEFAULT_ALLOWED_MENTIONS } from '../../../shared/utils/allowedMentions';
+import log from '../../../shared/utils/logger';
 
 export const data = new SlashCommandSubcommandBuilder()
     .setName('delete')
@@ -24,7 +25,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
             allowedMentions: DEFAULT_ALLOWED_MENTIONS
         });
     } catch (error) {
-        console.error('Error deleting form:', error);
+        log.error('Error deleting form', {
+            component: 'identity',
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined,
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error'
+        });
         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         return interaction.editReply({
             content: `Failed to delete form: ${errorMessage}`,

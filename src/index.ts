@@ -2,6 +2,7 @@ import { Events } from 'discord.js';
 import { client } from './adapters/discord/client';
 import { registry } from './adapters/discord/registry';
 import { command as pingCommand } from './features/health/discord/ping';
+import log from './shared/utils/logger';
 
 // Register commands with the registry
 import { command as formCommand } from './features/identity/discord/form';
@@ -12,44 +13,65 @@ registry.registerCommand(pingCommand);
 
 // Enhanced ready event with comprehensive logging
 client.once(Events.ClientReady, (readyClient) => {
-    console.log(`
+    log.info(`
 🚀 ======================================= 🚀
 ███████╗██╗  ██╗ █████╗ ██████╗ ███████╗███████╗██╗  ██╗██╗███████╗████████╗
 ██╔════╝██║  ██║██╔══██╗██╔══██╗██╔════╝██╔════╝██║  ██║██║██╔════╝╚══██╔══╝
-███████╗███████║███████║██████╔╝█████╗  ███████╗███████║██║█████╗     ██║   
-╚════██║██╔══██║██╔══██║██╔═══╝ ██╔══╝  ╚════██║██╔══██║██║██╔══╝     ██║   
-███████║██║  ██║██║  ██║██║     ███████╗███████║██║  ██║██║██║        ██║   
-╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝    
+███████╗███████║███████║██████╔╝█████╗  ███████╗███████║██║█████╗     ██║
+╚════██║██╔══██║██╔══██║██╔═══╝ ██╔══╝  ╚════██║██╔══██║██║██╔══╝     ██║
+███████║██║  ██║██║  ██║██║     ███████╗███████║██║  ██║██║██║        ██║
+╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝
 🚀 ======================================= 🚀
 ✅ Bot is ready! Logged in as ${readyClient.user.tag}
 🆔 Bot ID: ${readyClient.user.id}
 🏠 Connected to ${readyClient.guilds.cache.size} guild(s)
 👥 Serving ${readyClient.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)} total members
-📊 Uptime: ${Math.floor(process.uptime())}s
 🕐 Started at: ${new Date().toLocaleString()}
 🚀 ======================================= 🚀
-    `);
+    `, {
+        component: 'bot',
+        status: 'ready',
+        guilds: readyClient.guilds.cache.size,
+        members: readyClient.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0)
+    });
 });
 
 // Enhanced interaction handler with better error handling and logging
 client.on(Events.InteractionCreate, async (interaction) => {
+    const interactionLogger = log.child({
+        component: 'interaction',
+        userId: interaction.user.id,
+        interactionId: interaction.id,
+        guildId: interaction.guild?.id,
+        channelId: interaction.channel?.id,
+    });
+
     try {
         if (interaction.isChatInputCommand()) {
             const command = registry.getCommand(interaction.commandName);
 
             if (!command) {
-                console.warn(`❌ Command '${interaction.commandName}' not found in registry`);
+                interactionLogger.warn(`Command not found in registry`, {
+                    route: interaction.commandName,
+                    status: 'not_found'
+                });
                 return;
             }
 
-            console.log(`📝 Executing command: /${interaction.commandName} by ${interaction.user.tag} (${interaction.user.id})`);
-            console.log(`sub-command: ${interaction.options.getSubcommand()}`)
-            console.log(`options: ${JSON.stringify(interaction.options.data)}`)
+            interactionLogger.info(`Executing command`, {
+                route: interaction.commandName,
+                subcommand: interaction.options.getSubcommand(),
+                options: interaction.options.data,
+                status: 'executing'
+            });
 
             // Execute command with enhanced error handling
             await command.execute(interaction);
 
-            console.log(`✅ Command /${interaction.commandName} executed successfully`);
+            interactionLogger.info(`Command executed successfully`, {
+                route: interaction.commandName,
+                status: 'success'
+            });
         } else if (interaction.isAutocomplete()) {
             const handler = registry.getAutocompleteHandler(interaction.commandName);
             if (handler) {
@@ -67,7 +89,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
         }
     } catch (error) {
-        console.error(`❌ Error executing interaction:`, error);
+        interactionLogger.error(`Error executing interaction`, {
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error'
+        });
 
         // Provide more user-friendly error messages
         const errorMessage = {
@@ -86,35 +111,61 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 // Enhanced error handling for various events
 client.on(Events.Error, (error) => {
-    console.error('🔴 Discord client error:', error);
+    log.error('Discord client error', {
+        component: 'discord',
+        error: error.message,
+        status: 'error'
+    });
 });
 
 client.on(Events.Warn, (warning) => {
-    console.warn('🟡 Discord client warning:', warning);
+    log.warn('Discord client warning', {
+        component: 'discord',
+        warning: warning,
+        status: 'warning'
+    });
 });
 
 // Graceful shutdown handling
 process.on('SIGINT', () => {
-    console.log('\n🛑 Received SIGINT. Gracefully shutting down...');
+    log.info('Received SIGINT. Gracefully shutting down...', {
+        component: 'bot',
+        status: 'shutdown'
+    });
     client.destroy();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('\n🛑 Received SIGTERM. Gracefully shutting down...');
+    log.info('Received SIGTERM. Gracefully shutting down...', {
+        component: 'bot',
+        status: 'shutdown'
+    });
     client.destroy();
     process.exit(0);
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+    log.error('Unhandled Rejection', {
+        component: 'process',
+        reason: reason instanceof Error ? reason.message : String(reason),
+        promise: String(promise),
+        status: 'fatal'
+    });
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-    console.error('🚨 Uncaught Exception:', error);
+    log.fatal('Uncaught Exception', {
+        component: 'process',
+        error: error.message,
+        status: 'fatal'
+    });
     process.exit(1);
 });
 
-console.log('🔧 Initializing Shapeshift Discord Bot...');
+log.info('Initializing Shapeshift Discord Bot...', {
+    component: 'bot',
+    status: 'initializing'
+});

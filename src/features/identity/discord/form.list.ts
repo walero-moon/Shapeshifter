@@ -8,6 +8,7 @@ import {
 import { listForms } from '../app/ListForms';
 import { DEFAULT_ALLOWED_MENTIONS } from '../../../shared/utils/allowedMentions';
 import { createPaginationComponents, parsePageFromCustomId, calculatePagination } from '../../../shared/utils/pagination';
+import log from '../../../shared/utils/logger';
 
 const FORMS_PER_PAGE = 5;
 
@@ -42,7 +43,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
             allowedMentions: DEFAULT_ALLOWED_MENTIONS
         });
     } catch (error) {
-        console.error('Error listing forms:', error);
+        log.error('Error listing forms', {
+            component: 'identity',
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined,
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error'
+        });
         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         return interaction.editReply({
             content: `Failed to list forms: ${errorMessage}`,
@@ -74,7 +81,13 @@ export async function handleButtonInteraction(interaction: ButtonInteraction) {
             allowedMentions: DEFAULT_ALLOWED_MENTIONS
         });
     } catch (error) {
-        console.error('Error handling form list pagination:', error);
+        log.error('Error handling form list pagination', {
+            component: 'identity',
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id,
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error'
+        });
         const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         return interaction.update({
             content: `Failed to update page: ${errorMessage}`,

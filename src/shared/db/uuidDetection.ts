@@ -1,6 +1,7 @@
 import { db } from './client';
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+import log from '../utils/logger';
 
 /**
  * Runtime detection of UUIDv7 availability in PostgreSQL
@@ -58,7 +59,10 @@ export async function generateUuidv7(): Promise<string> {
             }
         } catch {
             // Fall back to application generation if database call fails
-            console.warn('Database UUIDv7 generation failed, falling back to application generation');
+            log.warn('Database UUIDv7 generation failed, falling back to application generation', {
+                component: 'uuid-detection',
+                status: 'fallback'
+            });
         }
     }
 
