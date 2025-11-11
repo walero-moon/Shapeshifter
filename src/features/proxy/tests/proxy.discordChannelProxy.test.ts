@@ -21,9 +21,13 @@ vi.mock('../../../adapters/discord/client', () => ({
             fetch: vi.fn(),
         },
         rest: {
+            get: vi.fn(),
             post: vi.fn(),
             patch: vi.fn(),
             delete: vi.fn(),
+        },
+        application: {
+            id: 'app123',
         },
     },
 }));
@@ -58,6 +62,14 @@ describe('DiscordChannelProxy', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        // Mock the webhook registry
+        const mockWebhookRegistry = {
+            getWebhook: vi.fn().mockResolvedValue({ id: 'webhook456', token: 'token789' })
+        };
+        Object.defineProperty(DiscordChannelProxy, 'webhookRegistry', {
+            value: mockWebhookRegistry,
+            writable: true
+        });
         proxy = new DiscordChannelProxy('channel123');
 
         mockChannel = {
@@ -72,12 +84,15 @@ describe('DiscordChannelProxy', () => {
 
         vi.mocked(client.channels.fetch).mockResolvedValue(mockChannel as unknown as any);
         vi.mocked(mockChannel.createWebhook).mockResolvedValue(mockWebhook);
+        vi.mocked(client.rest.get).mockResolvedValue([]);
+        vi.mocked(client.rest.post).mockResolvedValue({ id: 'webhook456', token: 'token789' });
     });
 
     describe('send method', () => {
         it('should send message successfully with wait=true', async () => {
-            const mockResponse = { id: 'msg123' };
-            vi.mocked(client.rest.post).mockResolvedValue(mockResponse);
+            const mockWebhookResponse = { id: 'webhook456', token: 'token789' };
+            const mockMessageResponse = { id: 'msg123' };
+            vi.mocked(client.rest.post).mockResolvedValueOnce(mockWebhookResponse).mockResolvedValueOnce(mockMessageResponse);
 
             const result = await proxy.send({
                 username: 'TestUser',
@@ -98,22 +113,22 @@ describe('DiscordChannelProxy', () => {
                 name: 'Shapeshift Proxy',
                 reason: 'Temporary webhook for message proxying',
             });
-            expect(client.rest.post).toHaveBeenCalledWith('/webhooks/webhook456/token789', {
+            expect(client.rest.post).toHaveBeenCalledWith('/webhooks/webhook456/token789?wait=true', {
                 body: {
                     content: 'Hello world',
                     username: 'TestUser',
                     avatar_url: 'https://example.com/avatar.png',
                     allowed_mentions: { parse: [], repliedUser: false },
                     files: [],
-                    wait: true,
                 },
             });
         });
 
         it('should truncate content to 2000 characters', async () => {
             const longContent = 'a'.repeat(2500);
-            const mockResponse = { id: 'msg123' };
-            vi.mocked(client.rest.post).mockResolvedValue(mockResponse);
+            const mockWebhookResponse = { id: 'webhook456', token: 'token789' };
+            const mockMessageResponse = { id: 'msg123' };
+            vi.mocked(client.rest.post).mockResolvedValueOnce(mockWebhookResponse).mockResolvedValueOnce(mockMessageResponse);
 
             await proxy.send({
                 username: 'TestUser',
@@ -135,12 +150,14 @@ describe('DiscordChannelProxy', () => {
         });
 
         it('should handle 429 rate limit by retrying', async () => {
+            const mockWebhookResponse = { id: 'webhook456', token: 'token789' };
             const mockError = { code: 429, retry_after: 1000 };
-            const mockResponse = { id: 'msg123' };
+            const mockMessageResponse = { id: 'msg123' };
 
             vi.mocked(client.rest.post)
+                .mockResolvedValueOnce(mockWebhookResponse)
                 .mockRejectedValueOnce(mockError)
-                .mockResolvedValueOnce(mockResponse);
+                .mockResolvedValueOnce(mockMessageResponse);
 
             await proxy.send({
                 username: 'TestUser',
@@ -154,9 +171,12 @@ describe('DiscordChannelProxy', () => {
         });
 
         it('should throw after max retries on 429', async () => {
+            const mockWebhookResponse = { id: 'webhook456', token: 'token789' };
             const mockError = { code: 429, retry_after: 1000 };
 
-            vi.mocked(client.rest.post).mockRejectedValue(mockError);
+            vi.mocked(client.rest.post)
+                .mockResolvedValueOnce(mockWebhookResponse)
+                .mockRejectedValue(mockError);
 
             await expect(proxy.send({
                 username: 'TestUser',

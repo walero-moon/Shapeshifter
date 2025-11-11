@@ -1,4 +1,4 @@
-import { Events } from 'discord.js';
+import { Events, MessageFlags } from 'discord.js';
 import { client } from './adapters/discord/client';
 import { registry } from './adapters/discord/registry';
 import { command as pingCommand } from './features/health/discord/ping';
@@ -59,7 +59,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
             interactionLogger.info(`Executing command`, {
                 route: interaction.commandName,
-                subcommand: interaction.options.getSubcommand(),
+                subcommand: interaction.options.getSubcommand(false),
                 options: interaction.options.data,
                 status: 'executing'
             });
@@ -96,8 +96,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Provide more user-friendly error messages
         const errorMessage = {
             content: '🚫 There was an error while executing this interaction! Please try again later.',
-            ephemeral: true
-        };
+            flags: MessageFlags.Ephemeral
+        } as const;
 
         // Try to respond appropriately based on interaction state
         if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {

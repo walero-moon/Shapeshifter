@@ -8,8 +8,12 @@ vi.mock('../../../features/proxy/app/MatchAlias', () => ({
     matchAlias: vi.fn(),
 }));
 
-vi.mock('../../../features/proxy/app/SendAsForm', () => ({
-    sendAsForm: vi.fn(),
+vi.mock('../../../features/proxy/app/ValidateUserChannelPerms', () => ({
+    validateUserChannelPerms: vi.fn(),
+}));
+
+vi.mock('../../../features/proxy/app/ProxyCoordinator', () => ({
+    proxyCoordinator: vi.fn(),
 }));
 
 vi.mock('../../../features/identity/infra/FormRepo', () => ({
@@ -32,7 +36,8 @@ vi.mock('../../../shared/utils/logger', () => ({
 
 // Import after mocking
 import { matchAlias } from '../../../features/proxy/app/MatchAlias';
-import { sendAsForm } from '../../../features/proxy/app/SendAsForm';
+import { validateUserChannelPerms } from '../../../features/proxy/app/ValidateUserChannelPerms';
+import { proxyCoordinator } from '../../../features/proxy/app/ProxyCoordinator';
 import { formRepo } from '../../../features/identity/infra/FormRepo';
 import { DiscordChannelProxy } from '../../../adapters/discord/DiscordChannelProxy';
 
@@ -49,6 +54,7 @@ describe('messageCreateProxy function', () => {
             channelId: 'channel456',
             guildId: 'guild789',
             attachments: [],
+            channel: { id: 'channel456', isTextBased: () => true } as any,
         } as unknown as Message<boolean>;
 
         mockChannelProxy = {
@@ -82,7 +88,7 @@ describe('messageCreateProxy function', () => {
         await messageCreateProxy(mockMessage);
 
         expect(matchAlias).toHaveBeenCalledWith('user123', 'n:text hello world');
-        expect(sendAsForm).not.toHaveBeenCalled();
+        expect(proxyCoordinator).not.toHaveBeenCalled();
     });
 
     it('should proxy message when alias matches', async () => {
@@ -109,9 +115,10 @@ describe('messageCreateProxy function', () => {
 
         vi.mocked(matchAlias).mockResolvedValue(mockMatch);
         vi.mocked(formRepo.getById).mockResolvedValue(mockForm);
-        vi.mocked(sendAsForm).mockResolvedValue({
+        vi.mocked(validateUserChannelPerms).mockResolvedValue(true);
+        vi.mocked(proxyCoordinator).mockResolvedValue({
             webhookId: 'webhook123',
-            webhookToken: 'token456',
+            token: 'token456',
             messageId: 'msg789',
         });
 
@@ -119,20 +126,42 @@ describe('messageCreateProxy function', () => {
 
         expect(matchAlias).toHaveBeenCalledWith('user123', 'n:text hello world');
         expect(formRepo.getById).toHaveBeenCalledWith('form1');
-        expect(DiscordChannelProxy).toHaveBeenCalledWith('channel456');
-        expect(sendAsForm).toHaveBeenCalledWith(
-            {
+        expect(validateUserChannelPerms).toHaveBeenCalledWith('user123', expect.any(Object), []);
+    });
+
+    it('should skip proxying if user lacks permissions', async () => {
+        const mockMatch = {
+            alias: {
+                id: 'alias1',
                 userId: 'user123',
-                form: mockForm,
-                text: 'hello world',
-                attachments: [],
-                channelContext: {
-                    guildId: 'guild789',
-                    channelId: 'channel456',
-                },
+                formId: 'form1',
+                triggerRaw: 'n:text',
+                triggerNorm: 'n:text',
+                kind: 'prefix' as const,
+                createdAt: new Date(),
             },
-            mockChannelProxy
-        );
+            renderedText: 'hello world',
+        };
+
+        const mockForm = {
+            id: 'form1',
+            userId: 'user123',
+            name: 'Neoli',
+            avatarUrl: 'https://example.com/avatar.png',
+            createdAt: new Date(),
+        };
+
+        vi.mocked(matchAlias).mockResolvedValue(mockMatch);
+        vi.mocked(formRepo.getById).mockResolvedValue(mockForm);
+        vi.mocked(validateUserChannelPerms).mockResolvedValue(false);
+
+        await messageCreateProxy(mockMessage);
+
+        expect(matchAlias).toHaveBeenCalledWith('user123', 'n:text hello world');
+        expect(formRepo.getById).toHaveBeenCalledWith('form1');
+        expect(validateUserChannelPerms).toHaveBeenCalledWith('user123', expect.any(Object), []);
+        expect(DiscordChannelProxy).not.toHaveBeenCalled();
+        expect(proxyCoordinator).not.toHaveBeenCalled();
     });
 
     it('should handle messages with attachments', async () => {
@@ -177,37 +206,23 @@ describe('messageCreateProxy function', () => {
 
         vi.mocked(matchAlias).mockResolvedValue(mockMatch);
         vi.mocked(formRepo.getById).mockResolvedValue(mockForm);
-        vi.mocked(sendAsForm).mockResolvedValue({
+        vi.mocked(validateUserChannelPerms).mockResolvedValue(true);
+        vi.mocked(proxyCoordinator).mockResolvedValue({
             webhookId: 'webhook123',
-            webhookToken: 'token456',
+            token: 'token456',
             messageId: 'msg789',
         });
 
         await messageCreateProxy(mockMessage);
 
-        const expectedAttachments = mockAttachments.map(att => ({
-            ...att,
-            toJSON: () => att,
-        }));
-
-        expect(sendAsForm).toHaveBeenCalledWith(
-            expect.objectContaining({
-                attachments: expect.any(Array),
-                channelContext: expect.objectContaining({
-                    guildId: 'guild789',
-                    channelId: 'channel456',
-                }),
-                form: expect.objectContaining({
-                    id: 'form1',
-                    userId: 'user123',
-                    name: 'Neoli',
-                    avatarUrl: null,
-                    createdAt: expect.any(Date),
-                }),
-                text: 'hello world',
-                userId: 'user123',
-            }),
-            mockChannelProxy
+        expect(proxyCoordinator).toHaveBeenCalledWith(
+            'user123',
+            'form1',
+            'channel456',
+            'guild789',
+            'hello world',
+            mockChannelProxy,
+            expect.any(Array)
         );
     });
 
@@ -230,10 +245,10 @@ describe('messageCreateProxy function', () => {
 
         await messageCreateProxy(mockMessage);
 
-        expect(sendAsForm).not.toHaveBeenCalled();
+        expect(proxyCoordinator).not.toHaveBeenCalled();
     });
 
-    it('should handle sendAsForm errors gracefully', async () => {
+    it('should handle proxyCoordinator errors gracefully', async () => {
         const mockMatch = {
             alias: {
                 id: 'alias1',
@@ -257,12 +272,13 @@ describe('messageCreateProxy function', () => {
 
         vi.mocked(matchAlias).mockResolvedValue(mockMatch);
         vi.mocked(formRepo.getById).mockResolvedValue(mockForm);
-        vi.mocked(sendAsForm).mockRejectedValue(new Error('Webhook failed'));
+        vi.mocked(validateUserChannelPerms).mockResolvedValue(true);
+        vi.mocked(proxyCoordinator).mockRejectedValue(new Error('Webhook failed'));
 
         // Should not throw
         await expect(messageCreateProxy(mockMessage)).resolves.toBeUndefined();
 
-        expect(sendAsForm).toHaveBeenCalled();
+        expect(proxyCoordinator).toHaveBeenCalled();
     });
 
     it('should handle matchAlias errors gracefully', async () => {
@@ -271,7 +287,7 @@ describe('messageCreateProxy function', () => {
         // Should not throw
         await expect(messageCreateProxy(mockMessage)).resolves.toBeUndefined();
 
-        expect(sendAsForm).not.toHaveBeenCalled();
+        expect(proxyCoordinator).not.toHaveBeenCalled();
     });
 
     it('should handle form lookup errors gracefully', async () => {
@@ -294,6 +310,6 @@ describe('messageCreateProxy function', () => {
         // Should not throw
         await expect(messageCreateProxy(mockMessage)).resolves.toBeUndefined();
 
-        expect(sendAsForm).not.toHaveBeenCalled();
+        expect(proxyCoordinator).not.toHaveBeenCalled();
     });
 });

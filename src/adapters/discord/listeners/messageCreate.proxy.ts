@@ -1,13 +1,14 @@
-import { Message } from 'discord.js';
+import { Message, TextChannel } from 'discord.js';
 import { matchAlias } from '../../../features/proxy/app/MatchAlias';
-import { sendAsForm } from '../../../features/proxy/app/SendAsForm';
+import { validateUserChannelPerms } from '../../../features/proxy/app/ValidateUserChannelPerms';
+import { proxyCoordinator } from '../../../features/proxy/app/ProxyCoordinator';
 import { formRepo } from '../../../features/identity/infra/FormRepo';
 import { DiscordChannelProxy } from '../DiscordChannelProxy';
 import { log } from '../../../shared/utils/logger';
 
 /**
  * Message create listener for tag-based proxying
- * Listens for messages that match user aliases and proxies them as forms
+ * Listens for guild text messages that match user aliases and proxies them as forms
  */
 export async function messageCreateProxy(message: Message) {
     // Skip bot messages
@@ -17,6 +18,11 @@ export async function messageCreateProxy(message: Message) {
 
     // Skip messages without content
     if (!message.content) {
+        return;
+    }
+
+    // Ignore DMs - only process guild messages
+    if (!message.guildId) {
         return;
     }
 
@@ -42,38 +48,44 @@ export async function messageCreateProxy(message: Message) {
             return;
         }
 
-        // Prepare input for SendAsForm
-        const input = {
-            userId: message.author.id,
-            form,
-            text: match.renderedText,
-            attachments: message.attachments.map(attachment => attachment),
-            channelContext: {
-                guildId: message.guildId!,
-                channelId: message.channelId,
-            },
-        };
+        // Validate user permissions in the channel
+        const hasPerms = await validateUserChannelPerms(
+            message.author.id,
+            message.channel as TextChannel,
+            message.attachments.map(attachment => attachment)
+        );
 
-        log.info('Prepared input for sendAsForm', {
-            userId: input.userId,
-            formId: input.form.id,
-            text: input.text,
-            attachmentsCount: input.attachments?.length || 0,
-            channelContext: input.channelContext,
-        });
+        if (!hasPerms) {
+            log.info('User lacks permissions to proxy in this channel', {
+                component: 'proxy',
+                userId: message.author.id,
+                guildId: message.guildId,
+                channelId: message.channelId,
+                status: 'perms_denied'
+            });
+            return;
+        }
 
         // Create channel proxy instance
         const channelProxy = new DiscordChannelProxy(message.channelId);
 
-        // Send the message as the form
-        await sendAsForm(input, channelProxy);
+        // Proxy the message via coordinator
+        await proxyCoordinator(
+            message.author.id,
+            form.id,
+            message.channelId,
+            message.guildId,
+            match.renderedText,
+            channelProxy,
+            message.attachments.map(attachment => attachment)
+        );
 
         log.info('Message proxied successfully via tag', {
             component: 'proxy',
             userId: message.author.id,
             formId: form.id,
             aliasId: match.alias.id,
-            guildId: message.guildId || undefined,
+            guildId: message.guildId,
             channelId: message.channelId,
             status: 'proxy_success'
         });
@@ -82,7 +94,7 @@ export async function messageCreateProxy(message: Message) {
         log.error('Failed to proxy message via tag', {
             component: 'proxy',
             userId: message.author.id,
-            guildId: message.guildId || undefined,
+            guildId: message.guildId,
             channelId: message.channelId,
             status: 'proxy_error',
             error

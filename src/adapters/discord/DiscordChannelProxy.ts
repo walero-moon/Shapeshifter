@@ -1,13 +1,14 @@
 import { Routes } from 'discord-api-types/v10';
-import { TextChannel, Webhook } from 'discord.js';
 import { setTimeout } from 'timers/promises';
 import { client } from './client';
 import { ChannelProxyPort, SendMessageData, EditMessageData } from '../../shared/ports/ChannelProxyPort';
 import { handleWebhookError } from '../../shared/utils/errorHandling';
 import log, { type LogContext } from '../../shared/utils/logger';
+import { WebhookRegistry } from './WebhookRegistry';
 
 export class DiscordChannelProxy implements ChannelProxyPort {
     private channelId: string;
+    private static webhookRegistry = new WebhookRegistry();
 
     constructor(channelId: string) {
         this.channelId = channelId;
@@ -22,36 +23,25 @@ export class DiscordChannelProxy implements ChannelProxyPort {
 
         // For send, we need the result, so we don't use handleWebhookError as it can return undefined
         try {
-            // Create temporary webhook for this message
-            const channel = await client.channels.fetch(this.channelId) as TextChannel;
-            if (!channel?.isTextBased()) {
-                throw new Error('Invalid or non-text channel');
-            }
-
-            const webhook = await this.executeWithRetry(() =>
-                channel.createWebhook({
-                    name: 'Shapeshift Proxy',
-                    reason: 'Temporary webhook for message proxying'
-                })
-            ) as Webhook;
+            // Get or create persistent webhook for this channel
+            const { id: webhookId, token: webhookToken } = await DiscordChannelProxy.webhookRegistry.getWebhook(this.channelId);
 
             // Execute webhook with message data
             const result = await this.executeWithRetry(() =>
-                client.rest.post(`/webhooks/${webhook.id}/${webhook.token!}`, {
+                client.rest.post(`/webhooks/${webhookId}/${webhookToken}?wait=true`, {
                     body: {
                         content: data.content.length > 2000 ? data.content.slice(0, 2000) : data.content,
                         username: data.username,
                         avatar_url: data.avatarUrl,
                         allowed_mentions: data.allowedMentions,
-                        files: data.attachments,
-                        wait: true
+                        files: data.attachments
                     }
                 })
             ) as { id: string }; // Discord API response for webhook execute with wait=true
 
             return {
-                webhookId: webhook.id,
-                webhookToken: webhook.token!,
+                webhookId,
+                webhookToken,
                 messageId: result.id
             };
         } catch (error) {

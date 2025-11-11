@@ -1,6 +1,7 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, Message } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, Message, MessageFlags } from 'discord.js';
 import { formRepo } from '../../identity/infra/FormRepo';
-import { sendAsForm } from '../app/SendAsForm';
+import { proxyCoordinator } from '../app/ProxyCoordinator';
+import { validateUserChannelPerms } from '../app/ValidateUserChannelPerms';
 import { DiscordChannelProxy } from '../../../adapters/discord/DiscordChannelProxy';
 import { handleInteractionError } from '../../../shared/utils/errorHandling';
 import { DEFAULT_ALLOWED_MENTIONS } from '../../../shared/utils/allowedMentions';
@@ -83,7 +84,7 @@ export const command = {
                 .setRequired(false)
         ),
     execute: async (interaction: ChatInputCommandInteraction): Promise<Message<boolean> | undefined> => {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         try {
             const formId = interaction.options.getString('form', true);
@@ -106,6 +107,26 @@ export const command = {
                 });
             }
 
+            // Validate permissions (only for guild channels)
+            if (!interaction.guild || !interaction.channel || !interaction.channel.isTextBased() || interaction.channel.type === 1) { // DMChannel
+                return interaction.editReply({
+                    content: 'This command can only be used in server channels.',
+                    allowedMentions: DEFAULT_ALLOWED_MENTIONS
+                });
+            }
+
+            const hasPerms = await validateUserChannelPerms(
+                interaction.user.id,
+                interaction.channel as any, // Cast to TextChannel
+                [] // attachments will be collected below
+            );
+            if (!hasPerms) {
+                return interaction.editReply({
+                    content: 'You do not have permission to send messages in this channel.',
+                    allowedMentions: DEFAULT_ALLOWED_MENTIONS
+                });
+            }
+
             // Collect attachments
             const attachments = [];
             for (let i = 1; i <= 10; i++) {
@@ -115,20 +136,32 @@ export const command = {
                 }
             }
 
+            // Re-validate permissions with attachments
+            const hasPermsWithAttachments = await validateUserChannelPerms(
+                interaction.user.id,
+                interaction.channel as any, // Cast to TextChannel
+                attachments
+            );
+            if (!hasPermsWithAttachments) {
+                return interaction.editReply({
+                    content: 'You do not have permission to attach files in this channel.',
+                    allowedMentions: DEFAULT_ALLOWED_MENTIONS
+                });
+            }
+
             // Create channel proxy
             const channelProxy = new DiscordChannelProxy(interaction.channel!.id);
 
-            // Send the message
-            const result = await sendAsForm({
-                userId: interaction.user.id,
-                form,
+            // Proxy the message
+            const result = await proxyCoordinator(
+                interaction.user.id,
+                formId,
+                interaction.channel!.id,
+                interaction.guild!.id,
                 text,
-                attachments,
-                channelContext: {
-                    guildId: interaction.guild!.id,
-                    channelId: interaction.channel!.id
-                }
-            }, channelProxy);
+                channelProxy,
+                attachments
+            );
 
             // Confirm with link to the message
             const messageLink = `https://discord.com/channels/${interaction.guild!.id}/${interaction.channel!.id}/${result.messageId}`;

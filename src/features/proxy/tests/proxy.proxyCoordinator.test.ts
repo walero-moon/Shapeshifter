@@ -1,0 +1,277 @@
+import { describe, it, expect, beforeEach, vi, Mocked } from 'vitest';
+import { proxyCoordinator } from '../app/ProxyCoordinator';
+import { ChannelProxyPort } from '../../../shared/ports/ChannelProxyPort';
+import { formRepo } from '../../identity/infra/FormRepo';
+import { proxiedMessageRepo } from '../infra/ProxiedMessageRepo';
+import { generateUuidv7OrUndefined } from '../../../shared/db/uuidDetection';
+import { log } from '../../../shared/utils/logger';
+import { Form } from '../../identity/infra/FormRepo';
+import { Attachment } from 'discord.js';
+
+// Mock dependencies
+vi.mock('../../../shared/utils/logger', () => ({
+    log: {
+        info: vi.fn(),
+        error: vi.fn(),
+    },
+}));
+
+vi.mock('../../identity/infra/FormRepo', () => ({
+    formRepo: {
+        getById: vi.fn(),
+    },
+}));
+
+vi.mock('../infra/ProxiedMessageRepo', () => ({
+    proxiedMessageRepo: {
+        insert: vi.fn(),
+    },
+}));
+
+vi.mock('../../../shared/db/uuidDetection', () => ({
+    generateUuidv7OrUndefined: vi.fn(),
+}));
+
+describe('proxyCoordinator function', () => {
+    let mockChannelProxy: Mocked<ChannelProxyPort>;
+    let mockForm: Form;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+
+        mockChannelProxy = {
+            send: vi.fn(),
+            edit: vi.fn(),
+            delete: vi.fn(),
+        };
+
+        mockForm = {
+            id: 'form1',
+            userId: 'user1',
+            name: 'TestForm',
+            avatarUrl: 'https://example.com/avatar.png',
+            createdAt: new Date(),
+        };
+
+        (formRepo.getById as any).mockResolvedValue(mockForm);
+        (generateUuidv7OrUndefined as any).mockReturnValue('uuid123');
+        (proxiedMessageRepo.insert as any).mockResolvedValue(undefined);
+    });
+
+    it('should successfully coordinate proxy operation', async () => {
+        const mockSendResult = {
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        };
+        mockChannelProxy.send.mockResolvedValue(mockSendResult);
+
+        const result = await proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        );
+
+        expect(result).toEqual({
+            webhookId: 'webhook123',
+            token: 'token456',
+            messageId: 'msg789',
+        });
+
+        expect(formRepo.getById).toHaveBeenCalledWith('form1');
+        expect(mockChannelProxy.send).toHaveBeenCalledWith({
+            username: 'TestForm',
+            content: 'Hello world!',
+            allowedMentions: { parse: [], repliedUser: false },
+            avatarUrl: 'https://example.com/avatar.png',
+        });
+        expect(proxiedMessageRepo.insert).toHaveBeenCalledWith({
+            id: 'uuid123',
+            userId: 'user1',
+            formId: 'form1',
+            guildId: 'guild1',
+            channelId: 'channel1',
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        });
+        expect(log.info).toHaveBeenCalledTimes(2); // start and success
+        expect(log.error).not.toHaveBeenCalled();
+    });
+
+    it('should handle form with null avatar', async () => {
+        mockForm.avatarUrl = null;
+        const mockSendResult = {
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        };
+        mockChannelProxy.send.mockResolvedValue(mockSendResult);
+
+        await proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        );
+
+        expect(mockChannelProxy.send).toHaveBeenCalledWith({
+            username: 'TestForm',
+            content: 'Hello world!',
+            allowedMentions: { parse: [], repliedUser: false },
+        });
+        expect(mockChannelProxy.send).not.toHaveBeenCalledWith(
+            expect.objectContaining({ avatarUrl: expect.anything() })
+        );
+    });
+
+    it('should handle attachments', async () => {
+        const attachments = [
+            { id: 'att1', url: 'https://example.com/file1.png', name: 'file1.png' },
+        ] as Attachment[];
+        const mockSendResult = {
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        };
+        mockChannelProxy.send.mockResolvedValue(mockSendResult);
+
+        await proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello with attachment!',
+            mockChannelProxy,
+            attachments
+        );
+
+        expect(mockChannelProxy.send).toHaveBeenCalledWith({
+            username: 'TestForm',
+            content: 'Hello with attachment!',
+            allowedMentions: { parse: [], repliedUser: false },
+            avatarUrl: 'https://example.com/avatar.png',
+            attachments,
+        });
+    });
+
+    it('should throw error when form not found', async () => {
+        (formRepo.getById as any).mockResolvedValue(null);
+
+        await expect(proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        )).rejects.toThrow('Form with ID form1 not found');
+
+        expect(mockChannelProxy.send).not.toHaveBeenCalled();
+        expect(proxiedMessageRepo.insert).not.toHaveBeenCalled();
+        expect(log.error).toHaveBeenCalled();
+    });
+
+    it('should throw error when channel proxy send fails', async () => {
+        mockChannelProxy.send.mockRejectedValue(new Error('Webhook failed'));
+
+        await expect(proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        )).rejects.toThrow('Webhook failed');
+
+        expect(proxiedMessageRepo.insert).not.toHaveBeenCalled();
+        expect(log.error).toHaveBeenCalled();
+    });
+
+    it('should handle UUID generation failure', async () => {
+        (generateUuidv7OrUndefined as any).mockReturnValue(undefined);
+        const mockSendResult = {
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        };
+        mockChannelProxy.send.mockResolvedValue(mockSendResult);
+
+        await proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        );
+
+        expect(proxiedMessageRepo.insert).toHaveBeenCalledWith({
+            id: '',
+            userId: 'user1',
+            formId: 'form1',
+            guildId: 'guild1',
+            channelId: 'channel1',
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        });
+    });
+
+    it('should throw error when database insert fails', async () => {
+        const mockSendResult = {
+            webhookId: 'webhook123',
+            webhookToken: 'token456',
+            messageId: 'msg789',
+        };
+        mockChannelProxy.send.mockResolvedValue(mockSendResult);
+        (proxiedMessageRepo.insert as any).mockRejectedValue(new Error('DB insert failed'));
+
+        await expect(proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        )).rejects.toThrow('DB insert failed');
+
+        expect(log.error).toHaveBeenCalled();
+    });
+
+    it('should log start and error on failure', async () => {
+        mockChannelProxy.send.mockRejectedValue(new Error('Send failed'));
+
+        await expect(proxyCoordinator(
+            'user1',
+            'form1',
+            'channel1',
+            'guild1',
+            'Hello world!',
+            mockChannelProxy
+        )).rejects.toThrow();
+
+        expect(log.info).toHaveBeenCalledWith('Starting proxy coordination', expect.objectContaining({
+            component: 'proxy',
+            userId: 'user1',
+            formId: 'form1',
+            guildId: 'guild1',
+            channelId: 'channel1',
+            status: 'proxy_start'
+        }));
+        expect(log.error).toHaveBeenCalledWith('Proxy coordination failed', expect.objectContaining({
+            component: 'proxy',
+            userId: 'user1',
+            formId: 'form1',
+            guildId: 'guild1',
+            channelId: 'channel1',
+            status: 'proxy_error',
+            error: expect.any(Error)
+        }));
+    });
+});
