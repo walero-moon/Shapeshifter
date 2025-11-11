@@ -23,7 +23,7 @@ describe('matchAlias function', () => {
         expect(aliasRepo.getByUser).toHaveBeenCalledWith('user1');
     });
 
-    it('should return null when no prefix aliases exist', async () => {
+    it('should return null when no prefix aliases exist and pattern does not match', async () => {
         const mockAliases = [
             {
                 id: 'alias1',
@@ -180,6 +180,78 @@ describe('matchAlias function', () => {
             alias: mockAliases[0],
             renderedText: 'hello world',
         }); // Matches because the function doesn't validate 'text' presence - that's done at creation time
+    });
+
+    it('should match pattern aliases exactly', async () => {
+        const mockAliases = [
+            {
+                id: 'alias1',
+                userId: 'user1',
+                formId: 'form1',
+                triggerRaw: '{text}',
+                triggerNorm: '{text}',
+                kind: 'pattern' as const,
+                createdAt: new Date(),
+            },
+        ];
+        vi.mocked(aliasRepo.getByUser).mockResolvedValue(mockAliases);
+
+        const result = await matchAlias('user1', '{hello world}');
+
+        expect(result).toEqual({
+            alias: mockAliases[0],
+            renderedText: 'hello world',
+        });
+    });
+
+    it('should not match pattern aliases if prefix or suffix does not match', async () => {
+        const mockAliases = [
+            {
+                id: 'alias1',
+                userId: 'user1',
+                formId: 'form1',
+                triggerRaw: '{text}',
+                triggerNorm: '{text}',
+                kind: 'pattern' as const,
+                createdAt: new Date(),
+            },
+        ];
+        vi.mocked(aliasRepo.getByUser).mockResolvedValue(mockAliases);
+
+        const result = await matchAlias('user1', '[hello world]');
+
+        expect(result).toBeNull();
+    });
+
+    it('should prefer prefix over pattern if both could match', async () => {
+        const mockAliases = [
+            {
+                id: 'alias1',
+                userId: 'user1',
+                formId: 'form1',
+                triggerRaw: 'n:text',
+                triggerNorm: 'n:text',
+                kind: 'prefix' as const,
+                createdAt: new Date(),
+            },
+            {
+                id: 'alias2',
+                userId: 'user1',
+                formId: 'form2',
+                triggerRaw: '{text}',
+                triggerNorm: '{text}',
+                kind: 'pattern' as const,
+                createdAt: new Date(),
+            },
+        ];
+        vi.mocked(aliasRepo.getByUser).mockResolvedValue(mockAliases);
+
+        const result = await matchAlias('user1', 'n:text hello world');
+
+        expect(result).toEqual({
+            alias: mockAliases[0],
+            renderedText: 'hello world',
+        });
     });
 
     it('should handle database errors', async () => {

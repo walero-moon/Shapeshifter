@@ -11,28 +11,102 @@ import { log } from '../../../shared/utils/logger';
  * Listens for guild text messages that match user aliases and proxies them as forms
  */
 export async function messageCreateProxy(message: Message) {
+    console.log('🔍 DEBUG: messageCreateProxy called', {
+        userId: message.author.id,
+        channelId: message.channelId,
+        guildId: message.guildId,
+        content: message.content,
+        hasAttachments: message.attachments.size > 0,
+        isBot: message.author.bot,
+    });
+
+    log.debug('Message received', {
+        component: 'proxy',
+        userId: message.author.id,
+        guildId: message.guildId || undefined,
+        channelId: message.channelId,
+        content: message.content ? message.content.substring(0, 100) : undefined, // Truncate for logging
+        hasAttachments: message.attachments.size > 0,
+        isBot: message.author.bot,
+        status: 'message_received'
+    });
+
     // Skip bot messages
     if (message.author.bot) {
+        console.log('🔍 DEBUG: Skipping bot message');
+        log.debug('Skipping bot message', {
+            component: 'proxy',
+            userId: message.author.id,
+            status: 'skipped_bot'
+        });
         return;
     }
 
     // Skip messages without content
     if (!message.content) {
+        console.log('🔍 DEBUG: Skipping message without content');
+        log.debug('Skipping message without content', {
+            component: 'proxy',
+            userId: message.author.id,
+            status: 'skipped_no_content'
+        });
         return;
     }
 
     // Ignore DMs - only process guild messages
     if (!message.guildId) {
+        console.log('🔍 DEBUG: Skipping DM message');
+        log.debug('Skipping DM message', {
+            component: 'proxy',
+            userId: message.author.id,
+            status: 'skipped_dm'
+        });
         return;
     }
 
+    console.log('🔍 DEBUG: Passed all filters, proceeding to alias matching');
+
+    log.debug('Processing guild message for proxying', {
+        component: 'proxy',
+        userId: message.author.id,
+        guildId: message.guildId || undefined,
+        channelId: message.channelId,
+        content: message.content,
+        status: 'processing'
+    });
+
     try {
+        console.log('🔍 DEBUG: About to call matchAlias');
         // Check if message matches any alias for the user
         const match = await matchAlias(message.author.id, message.content);
 
+        console.log('🔍 DEBUG: matchAlias result', {
+            matchFound: !!match,
+            aliasId: match?.alias.id,
+            renderedText: match?.renderedText,
+        });
+
+        log.debug('Alias matching result', {
+            component: 'proxy',
+            userId: message.author.id,
+            content: message.content,
+            matchFound: !!match,
+            aliasId: match?.alias.id,
+            renderedText: match?.renderedText,
+            status: match ? 'match_found' : 'no_match'
+        });
+
         if (!match) {
+            console.log('🔍 DEBUG: No alias match found, skipping proxy');
+            log.debug('No alias match found, skipping proxy', {
+                component: 'proxy',
+                userId: message.author.id,
+                status: 'skipped_no_match'
+            });
             return;
         }
+
+        console.log('🔍 DEBUG: Alias match found, proceeding to form lookup');
 
         // Get the form associated with the matched alias
         const form = await formRepo.getById(match.alias.formId);
@@ -55,11 +129,19 @@ export async function messageCreateProxy(message: Message) {
             message.attachments.map(attachment => attachment)
         );
 
+        log.debug('Permission check result', {
+            component: 'proxy',
+            userId: message.author.id,
+            channelId: message.channelId,
+            hasPerms,
+            status: hasPerms ? 'perms_granted' : 'perms_denied'
+        });
+
         if (!hasPerms) {
             log.info('User lacks permissions to proxy in this channel', {
                 component: 'proxy',
                 userId: message.author.id,
-                guildId: message.guildId,
+                guildId: message.guildId || undefined,
                 channelId: message.channelId,
                 status: 'perms_denied'
             });
@@ -85,7 +167,7 @@ export async function messageCreateProxy(message: Message) {
             userId: message.author.id,
             formId: form.id,
             aliasId: match.alias.id,
-            guildId: message.guildId,
+            guildId: message.guildId || undefined,
             channelId: message.channelId,
             status: 'proxy_success'
         });
