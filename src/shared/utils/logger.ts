@@ -9,15 +9,21 @@ registerInstrumentations({
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const logger = pino({
+const baseConfig = {
   level: process.env.LOG_LEVEL || 'info',
   serializers: {
     err: pino.stdSerializers.err,
   },
+};
+
+const logger = pino({
+  ...baseConfig,
   transport: isProduction
-    ? pino.transport({
-        target: 'pino-opentelemetry-transport',
-      })
+    ? {
+      // runs in a worker thread and sends logs to OTLP
+      target: 'pino-opentelemetry-transport',
+      // options: { ... } // if you need to configure endpoint, service name, etc.
+    }
     : {
       target: 'pino-pretty',
       options: {

@@ -1,8 +1,6 @@
 import { Attachment } from 'discord.js';
 import { retryAsync } from './retry';
 import { log } from './logger';
-import { Buffer } from 'buffer';
-import { fetch } from 'undici';
 
 /**
  * Re-uploads Discord attachments by downloading them and returning as buffers
