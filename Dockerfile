@@ -55,7 +55,7 @@ USER nodejs
 
 # Health check - verify database connectivity as indicator of bot responsiveness
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "import('./dist/shared/db/client.js').then(m => m.sql.raw('SELECT 1')).then(() => process.exit(0)).catch(() => process.exit(1))"
+    CMD node -e "import('./dist/shared/db/client.js').then(({db}) => db.execute('SELECT 1')).then(() => process.exit(0)).catch(() => process.exit(1))"
 
 # Start the application
 CMD ["node", "dist/index.js"]

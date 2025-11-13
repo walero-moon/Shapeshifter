@@ -1,7 +1,8 @@
 import { pgTable, uuid, text, timestamp, pgEnum, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const forms = pgTable('forms', {
-    id: uuid('id').primaryKey(),
+    id: uuid('id').primaryKey().default(sql`uuidv7()`),
     userId: text('user_id').notNull(),
     name: text('name').notNull(),
     avatarUrl: text('avatar_url'),
@@ -11,7 +12,7 @@ export const forms = pgTable('forms', {
 export const aliasKindEnum = pgEnum('alias_kind', ['prefix', 'pattern']);
 
 export const aliases = pgTable('aliases', {
-    id: uuid('id').primaryKey(),
+    id: uuid('id').primaryKey().default(sql`uuidv7()`),
     userId: text('user_id').notNull(),
     formId: uuid('form_id').references(() => forms.id, { onDelete: 'cascade' }).notNull(),
     triggerRaw: text('trigger_raw').notNull(),
@@ -23,7 +24,7 @@ export const aliases = pgTable('aliases', {
 ]);
 
 export const proxiedMessages = pgTable('proxied_messages', {
-    id: uuid('id').primaryKey(),
+    id: uuid('id').primaryKey().default(sql`uuidv7()`),
     userId: text('user_id').notNull(),
     formId: uuid('form_id').references(() => forms.id, { onDelete: 'cascade' }).notNull(),
     guildId: text('guild_id').notNull(),

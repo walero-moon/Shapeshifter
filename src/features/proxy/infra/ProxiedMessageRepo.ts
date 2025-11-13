@@ -3,7 +3,7 @@ import { proxiedMessages } from '../../../shared/db/schema';
 import { log } from '../../../shared/utils/logger';
 
 export interface InsertProxiedMessageData {
-    id: string;
+    id?: string; // Optional: include when app generates UUID (PostgreSQL <18), omit for DB generation (PostgreSQL 18+)
     userId: string;
     formId: string;
     guildId: string;

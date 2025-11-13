@@ -71,7 +71,9 @@ export async function proxyCoordinator(
         // Persist proxied message
         const proxiedMessageId = await generateUuidv7OrUndefined();
         await proxiedMessageRepo.insert({
-            id: proxiedMessageId || '', // Fallback if no UUID generation
+            // Only include id field when we have a valid UUID (PostgreSQL <18)
+            // Let DB handle ID generation when function returns undefined (PostgreSQL 18+)
+            ...(proxiedMessageId !== undefined && { id: proxiedMessageId }),
             userId,
             formId,
             guildId,
